@@ -2,12 +2,19 @@ package com.example.diskanalyzer.controller;
 
 import com.example.diskanalyzer.model.FileNode;
 import com.example.diskanalyzer.model.ScanResult;
+import com.example.diskanalyzer.model.DuplicateGroup;
+import com.example.diskanalyzer.model.TreeNode;
 import com.example.diskanalyzer.service.ExportService;
 import com.example.diskanalyzer.service.FileDeleteService;
 import com.example.diskanalyzer.service.FileManagerService;
+import com.example.diskanalyzer.service.DuplicateDetectionService;
+import com.example.diskanalyzer.service.IncrementalScanService;
+import com.example.diskanalyzer.service.VisualizationService;
+import com.example.diskanalyzer.controller.VirtualizedTableController;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
+import javafx.concurrent.Task;
 import javafx.concurrent.WorkerStateEvent;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
@@ -17,7 +24,7 @@ import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.FileChooser;
-import javafx.collections.FXCollections;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -47,6 +54,14 @@ public class MainController implements Initializable {
   @FXML
   private Button exportJsonButton;
   @FXML
+  private Button findDuplicatesButton;
+  @FXML
+  private Button incrementalScanButton;
+  @FXML
+  private Button treeMapButton;
+  @FXML
+  private Button extensionStatsButton;
+  @FXML
   private ProgressBar progressBar;
   @FXML
   private Label statusLabel;
@@ -74,6 +89,10 @@ public class MainController implements Initializable {
   private final ExportService exportService = new ExportService();
   private final FileDeleteService deleteService = new FileDeleteService();
   private final FileManagerService fileManagerService = new FileManagerService();
+  private final DuplicateDetectionService duplicateService = new DuplicateDetectionService();
+  private final IncrementalScanService incrementalService = new IncrementalScanService();
+  private final VisualizationService visualizationService = new VisualizationService();
+  private VirtualizedTableController virtualizedTableController;
 
   @Override
   public void initialize(URL location, ResourceBundle resources) {
@@ -121,6 +140,10 @@ public class MainController implements Initializable {
     scanButton.setDisable(true);
     exportCsvButton.setDisable(true);
     exportJsonButton.setDisable(true);
+    findDuplicatesButton.setDisable(true);
+    incrementalScanButton.setDisable(true);
+    treeMapButton.setDisable(true);
+    extensionStatsButton.setDisable(true);
     progressBar.setVisible(false);
 
     statusLabel.setText("ディレクトリを選択してください");
@@ -186,6 +209,10 @@ public class MainController implements Initializable {
       progressBar.setVisible(false);
       exportCsvButton.setDisable(false);
       exportJsonButton.setDisable(false);
+      findDuplicatesButton.setDisable(false);
+      incrementalScanButton.setDisable(false);
+      treeMapButton.setDisable(false);
+      extensionStatsButton.setDisable(false);
 
       statusLabel.textProperty().unbind();
       statusLabel.setText("スキャン完了");
@@ -225,9 +252,12 @@ public class MainController implements Initializable {
       return;
     }
 
-    // テーブル更新
-    ObservableList<FileNode> fileList = FXCollections.observableArrayList(currentScanResult.getFiles());
-    fileTable.setItems(fileList);
+    // 仮想化テーブルコントローラーを初期化
+    if (virtualizedTableController == null) {
+      virtualizedTableController = new VirtualizedTableController(fileTable, currentScanResult.getFiles());
+    } else {
+      virtualizedTableController.updateData(currentScanResult.getFiles());
+    }
 
     // 円グラフ更新（上位10件）
     updatePieChart();
@@ -498,6 +528,290 @@ public class MainController implements Initializable {
       errorDialog.setHeaderText("予期しないエラーが発生しました");
       errorDialog.setContentText("エラー: " + e.getMessage());
       errorDialog.showAndWait();
+    }
+  }
+
+  /**
+   * 重複ファイル検出イベントハンドラー
+   */
+  @FXML
+  private void handleFindDuplicates(ActionEvent event) {
+    if (currentScanResult == null) {
+      return;
+    }
+
+    logger.info("重複ファイル検出開始");
+    statusLabel.setText("重複ファイルを検出中...");
+    findDuplicatesButton.setDisable(true);
+
+    // バックグラウンドで重複検出を実行
+    Task<List<DuplicateGroup>> duplicateTask = new Task<List<DuplicateGroup>>() {
+      @Override
+      protected List<DuplicateGroup> call() throws Exception {
+        updateMessage("重複ファイルを検出中...");
+        return duplicateService.findDuplicates(currentScanResult.getFiles());
+      }
+    };
+
+    duplicateTask.setOnSucceeded(e -> {
+      List<DuplicateGroup> duplicates = duplicateTask.getValue();
+      Platform.runLater(() -> {
+        findDuplicatesButton.setDisable(false);
+        statusLabel.setText("重複ファイル検出完了: " + duplicates.size() + " グループ");
+
+        // 重複ファイルダイアログを表示
+        showDuplicateDialog(duplicates);
+      });
+    });
+
+    duplicateTask.setOnFailed(e -> {
+      Platform.runLater(() -> {
+        findDuplicatesButton.setDisable(false);
+        statusLabel.setText("重複ファイル検出エラー: " + duplicateTask.getException().getMessage());
+        logger.error("重複ファイル検出エラー", duplicateTask.getException());
+      });
+    });
+
+    Thread duplicateThread = new Thread(duplicateTask);
+    duplicateThread.setDaemon(true);
+    duplicateThread.start();
+  }
+
+  /**
+   * 増分スキャンイベントハンドラー
+   */
+  @FXML
+  private void handleIncrementalScan(ActionEvent event) {
+    if (selectedPath == null) {
+      return;
+    }
+
+    logger.info("増分スキャン開始: {}", selectedPath);
+    statusLabel.setText("増分スキャン中...");
+    incrementalScanButton.setDisable(true);
+
+    Task<ScanResult> incrementalTask = new Task<ScanResult>() {
+      @Override
+      protected ScanResult call() throws Exception {
+        updateMessage("増分スキャン中...");
+        return incrementalService.incrementalScan(selectedPath);
+      }
+    };
+
+    incrementalTask.setOnSucceeded(e -> {
+      ScanResult result = incrementalTask.getValue();
+      Platform.runLater(() -> {
+        currentScanResult = result;
+        updateUI();
+        incrementalScanButton.setDisable(false);
+        statusLabel.setText("増分スキャン完了");
+        scanInfoLabel.setText(String.format(
+            "ファイル: %d件, ディレクトリ: %d件, 総サイズ: %s, 所要時間: %s",
+            result.getTotalFiles(),
+            result.getTotalDirectories(),
+            result.getFormattedTotalSize(),
+            result.getFormattedScanDuration()));
+      });
+    });
+
+    incrementalTask.setOnFailed(e -> {
+      Platform.runLater(() -> {
+        incrementalScanButton.setDisable(false);
+        statusLabel.setText("増分スキャンエラー: " + incrementalTask.getException().getMessage());
+        logger.error("増分スキャンエラー", incrementalTask.getException());
+      });
+    });
+
+    Thread incrementalThread = new Thread(incrementalTask);
+    incrementalThread.setDaemon(true);
+    incrementalThread.start();
+  }
+
+  /**
+   * ツリーマップ表示イベントハンドラー
+   */
+  @FXML
+  private void handleTreeMap(ActionEvent event) {
+    if (currentScanResult == null) {
+      return;
+    }
+
+    logger.info("ツリーマップ作成開始");
+    statusLabel.setText("ツリーマップを作成中...");
+    treeMapButton.setDisable(true);
+
+    Task<TreeNode> treeMapTask = new Task<TreeNode>() {
+      @Override
+      protected TreeNode call() throws Exception {
+        updateMessage("ツリーマップを作成中...");
+        return visualizationService.createTreeMap(currentScanResult);
+      }
+    };
+
+    treeMapTask.setOnSucceeded(e -> {
+      TreeNode rootNode = treeMapTask.getValue();
+      Platform.runLater(() -> {
+        treeMapButton.setDisable(false);
+        statusLabel.setText("ツリーマップ作成完了");
+
+        // ツリーマップダイアログを表示
+        showTreeMapDialog(rootNode);
+      });
+    });
+
+    treeMapTask.setOnFailed(e -> {
+      Platform.runLater(() -> {
+        treeMapButton.setDisable(false);
+        statusLabel.setText("ツリーマップ作成エラー: " + treeMapTask.getException().getMessage());
+        logger.error("ツリーマップ作成エラー", treeMapTask.getException());
+      });
+    });
+
+    Thread treeMapThread = new Thread(treeMapTask);
+    treeMapThread.setDaemon(true);
+    treeMapThread.start();
+  }
+
+  /**
+   * 拡張子統計表示イベントハンドラー
+   */
+  @FXML
+  private void handleExtensionStats(ActionEvent event) {
+    if (currentScanResult == null) {
+      return;
+    }
+
+    logger.info("拡張子統計作成開始");
+    statusLabel.setText("拡張子統計を作成中...");
+    extensionStatsButton.setDisable(true);
+
+    Task<Map<String, VisualizationService.ExtensionStats>> statsTask = new Task<Map<String, VisualizationService.ExtensionStats>>() {
+      @Override
+      protected Map<String, VisualizationService.ExtensionStats> call() throws Exception {
+        updateMessage("拡張子統計を作成中...");
+        return visualizationService.createExtensionStats(currentScanResult);
+      }
+    };
+
+    statsTask.setOnSucceeded(e -> {
+      Map<String, VisualizationService.ExtensionStats> stats = statsTask.getValue();
+      Platform.runLater(() -> {
+        extensionStatsButton.setDisable(false);
+        statusLabel.setText("拡張子統計作成完了: " + stats.size() + " 種類");
+
+        // 拡張子統計ダイアログを表示
+        showExtensionStatsDialog(stats);
+      });
+    });
+
+    statsTask.setOnFailed(e -> {
+      Platform.runLater(() -> {
+        extensionStatsButton.setDisable(false);
+        statusLabel.setText("拡張子統計作成エラー: " + statsTask.getException().getMessage());
+        logger.error("拡張子統計作成エラー", statsTask.getException());
+      });
+    });
+
+    Thread statsThread = new Thread(statsTask);
+    statsThread.setDaemon(true);
+    statsThread.start();
+  }
+
+  /**
+   * 重複ファイルダイアログを表示する
+   */
+  private void showDuplicateDialog(List<DuplicateGroup> duplicates) {
+    Alert dialog = new Alert(Alert.AlertType.INFORMATION);
+    dialog.setTitle("重複ファイル検出結果");
+    dialog.setHeaderText("重複ファイルが見つかりました");
+
+    StringBuilder content = new StringBuilder();
+    content.append("重複グループ数: ").append(duplicates.size()).append("\n\n");
+
+    long totalWastedSpace = 0;
+    for (DuplicateGroup group : duplicates) {
+      totalWastedSpace += group.getWastedSpace();
+      content.append("• ").append(group.getExtension()).append(" ファイル (")
+          .append(group.getDuplicateCount()).append(" 件): ")
+          .append(group.getFormattedWastedSpace()).append(" の無駄\n");
+    }
+
+    content.append("\n総無駄容量: ").append(formatSize(totalWastedSpace));
+
+    dialog.setContentText(content.toString());
+    dialog.showAndWait();
+  }
+
+  /**
+   * ツリーマップダイアログを表示する
+   */
+  private void showTreeMapDialog(TreeNode rootNode) {
+    Alert dialog = new Alert(Alert.AlertType.INFORMATION);
+    dialog.setTitle("ツリーマップ");
+    dialog.setHeaderText("ディレクトリ構造の可視化");
+
+    StringBuilder content = new StringBuilder();
+    content.append("ルートディレクトリ: ").append(rootNode.getName()).append("\n");
+    content.append("総サイズ: ").append(rootNode.getFormattedSize()).append("\n\n");
+
+    // 上位10個のディレクトリを表示
+    List<TreeNode> topDirectories = rootNode.getChildren().stream()
+        .filter(TreeNode::isDirectory)
+        .sorted((a, b) -> Long.compare(b.getSize(), a.getSize()))
+        .limit(10)
+        .collect(java.util.stream.Collectors.toList());
+
+    content.append("上位ディレクトリ:\n");
+    for (TreeNode dir : topDirectories) {
+      content.append("• ").append(dir.getName()).append(": ")
+          .append(dir.getFormattedSize()).append(" (")
+          .append(String.format("%.1f", dir.getSizePercentage(rootNode.getSize())))
+          .append("%)\n");
+    }
+
+    dialog.setContentText(content.toString());
+    dialog.showAndWait();
+  }
+
+  /**
+   * 拡張子統計ダイアログを表示する
+   */
+  private void showExtensionStatsDialog(Map<String, VisualizationService.ExtensionStats> stats) {
+    Alert dialog = new Alert(Alert.AlertType.INFORMATION);
+    dialog.setTitle("拡張子統計");
+    dialog.setHeaderText("ファイルタイプ別統計");
+
+    StringBuilder content = new StringBuilder();
+
+    // サイズ順でソート
+    List<VisualizationService.ExtensionStats> sortedStats = stats.values().stream()
+        .sorted((a, b) -> Long.compare(b.getTotalSize(), a.getTotalSize()))
+        .limit(15)
+        .collect(java.util.stream.Collectors.toList());
+
+    content.append("上位ファイルタイプ:\n\n");
+    for (VisualizationService.ExtensionStats stat : sortedStats) {
+      content.append("• .").append(stat.getExtension()).append(": ")
+          .append(stat.getFileCount()).append(" ファイル, ")
+          .append(stat.getFormattedTotalSize()).append("\n");
+    }
+
+    dialog.setContentText(content.toString());
+    dialog.showAndWait();
+  }
+
+  /**
+   * サイズをフォーマットする
+   */
+  private String formatSize(long bytes) {
+    if (bytes < 1024) {
+      return bytes + " B";
+    } else if (bytes < 1024 * 1024) {
+      return String.format("%.1f KB", bytes / 1024.0);
+    } else if (bytes < 1024 * 1024 * 1024) {
+      return String.format("%.1f MB", bytes / (1024.0 * 1024.0));
+    } else {
+      return String.format("%.1f GB", bytes / (1024.0 * 1024.0 * 1024.0));
     }
   }
 }

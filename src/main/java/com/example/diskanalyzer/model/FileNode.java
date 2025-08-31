@@ -15,6 +15,7 @@ public class FileNode {
   private final boolean isDirectory;
   private final boolean isHidden;
   private final String extension;
+  private String hash; // 重複検出用のハッシュ値
 
   public FileNode(Path path, long size, FileTime modified, boolean isDirectory, boolean isHidden) {
     this.path = path;
@@ -47,6 +48,14 @@ public class FileNode {
 
   public String getExtension() {
     return extension;
+  }
+
+  public String getHash() {
+    return hash;
+  }
+
+  public void setHash(String hash) {
+    this.hash = hash;
   }
 
   public String getName() {
