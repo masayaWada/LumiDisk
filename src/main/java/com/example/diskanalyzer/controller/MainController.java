@@ -3,6 +3,8 @@ package com.example.diskanalyzer.controller;
 import com.example.diskanalyzer.model.FileNode;
 import com.example.diskanalyzer.model.ScanResult;
 import com.example.diskanalyzer.service.ExportService;
+import com.example.diskanalyzer.service.FileDeleteService;
+import com.example.diskanalyzer.service.FileManagerService;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -37,6 +39,10 @@ public class MainController implements Initializable {
   @FXML
   private Button scanButton;
   @FXML
+  private Button showInFinderButton;
+  @FXML
+  private Button deleteButton;
+  @FXML
   private Button exportCsvButton;
   @FXML
   private Button exportJsonButton;
@@ -66,6 +72,8 @@ public class MainController implements Initializable {
   private Path selectedPath;
   private ScanResult currentScanResult;
   private final ExportService exportService = new ExportService();
+  private final FileDeleteService deleteService = new FileDeleteService();
+  private final FileManagerService fileManagerService = new FileManagerService();
 
   @Override
   public void initialize(URL location, ResourceBundle resources) {
@@ -95,6 +103,13 @@ public class MainController implements Initializable {
       long bytes1 = parseSizeToBytes(size1);
       long bytes2 = parseSizeToBytes(size2);
       return Long.compare(bytes1, bytes2);
+    });
+
+    // テーブルの選択変更リスナー
+    fileTable.getSelectionModel().selectedItemProperty().addListener((obs, oldSelection, newSelection) -> {
+      boolean hasSelection = newSelection != null;
+      deleteButton.setDisable(!hasSelection || !deleteService.canDelete(newSelection));
+      showInFinderButton.setDisable(!hasSelection || !fileManagerService.canShowInFileManager(newSelection));
     });
 
     // 表示件数ComboBoxの設定
@@ -362,6 +377,127 @@ public class MainController implements Initializable {
     } catch (NumberFormatException e) {
       logger.warn("サイズ文字列の解析に失敗: {}", formattedSize);
       return 0;
+    }
+  }
+
+  /**
+   * Finder/エクスプローラーで表示イベントハンドラー
+   */
+  @FXML
+  private void handleShowInFinder(ActionEvent event) {
+    FileNode selectedFile = fileTable.getSelectionModel().getSelectedItem();
+    if (selectedFile == null) {
+      return;
+    }
+
+    try {
+      statusLabel.textProperty().unbind();
+      statusLabel.setText("ファイルマネージャーで表示中...");
+
+      boolean success = fileManagerService.showInFileManager(selectedFile);
+
+      if (success) {
+        statusLabel.setText("ファイルマネージャーで表示しました: " + selectedFile.getName());
+        logger.info("ファイルマネージャー表示成功: {}", selectedFile.getPath());
+      } else {
+        statusLabel.setText("ファイルマネージャー表示に失敗しました: " + selectedFile.getName());
+        logger.error("ファイルマネージャー表示失敗: {}", selectedFile.getPath());
+
+        Alert errorDialog = new Alert(Alert.AlertType.ERROR);
+        errorDialog.setTitle("表示エラー");
+        errorDialog.setHeaderText("ファイルマネージャーでの表示に失敗しました");
+        errorDialog.setContentText("ファイルマネージャーが利用できないか、ファイルにアクセスできません。");
+        errorDialog.showAndWait();
+      }
+    } catch (Exception e) {
+      statusLabel.setText("ファイルマネージャー表示中にエラーが発生しました");
+      logger.error("ファイルマネージャー表示中にエラーが発生", e);
+
+      Alert errorDialog = new Alert(Alert.AlertType.ERROR);
+      errorDialog.setTitle("表示エラー");
+      errorDialog.setHeaderText("予期しないエラーが発生しました");
+      errorDialog.setContentText("エラー: " + e.getMessage());
+      errorDialog.showAndWait();
+    }
+  }
+
+  /**
+   * ファイル削除イベントハンドラー
+   */
+  @FXML
+  private void handleDelete(ActionEvent event) {
+    FileNode selectedFile = fileTable.getSelectionModel().getSelectedItem();
+    if (selectedFile == null) {
+      return;
+    }
+
+    // 削除確認ダイアログ
+    Alert confirmDialog = new Alert(Alert.AlertType.CONFIRMATION);
+    confirmDialog.setTitle("ファイル削除確認");
+    confirmDialog.setHeaderText("ファイルを削除しますか？");
+    confirmDialog.setContentText(String.format(
+        "削除対象: %s\nパス: %s\nサイズ: %s\n\nこの操作は取り消せません。",
+        selectedFile.getName(),
+        selectedFile.getPath(),
+        selectedFile.getFormattedSize()));
+
+    confirmDialog.getButtonTypes().setAll(ButtonType.YES, ButtonType.NO);
+    confirmDialog.showAndWait().ifPresent(buttonType -> {
+      if (buttonType == ButtonType.YES) {
+        deleteFile(selectedFile);
+      }
+    });
+  }
+
+  /**
+   * ファイルテーブルを更新する
+   */
+  private void updateFileTable() {
+    if (currentScanResult != null) {
+      ObservableList<FileNode> fileList = FXCollections.observableArrayList(currentScanResult.getFiles());
+      fileTable.setItems(fileList);
+    }
+  }
+
+  /**
+   * ファイル削除を実行する
+   */
+  private void deleteFile(FileNode fileNode) {
+    try {
+      statusLabel.textProperty().unbind();
+      statusLabel.setText("ファイルを削除中...");
+
+      boolean success = deleteService.deleteFile(fileNode);
+
+      if (success) {
+        statusLabel.setText("ファイルを削除しました: " + fileNode.getName());
+        logger.info("ファイル削除成功: {}", fileNode.getPath());
+
+        // スキャン結果から削除されたファイルを除去
+        if (currentScanResult != null) {
+          currentScanResult.getFiles().remove(fileNode);
+          updatePieChart();
+          updateFileTable();
+        }
+      } else {
+        statusLabel.setText("ファイル削除に失敗しました: " + fileNode.getName());
+        logger.error("ファイル削除失敗: {}", fileNode.getPath());
+
+        Alert errorDialog = new Alert(Alert.AlertType.ERROR);
+        errorDialog.setTitle("削除エラー");
+        errorDialog.setHeaderText("ファイルの削除に失敗しました");
+        errorDialog.setContentText("ファイルが使用中か、権限が不足している可能性があります。");
+        errorDialog.showAndWait();
+      }
+    } catch (Exception e) {
+      statusLabel.setText("ファイル削除中にエラーが発生しました");
+      logger.error("ファイル削除中にエラーが発生", e);
+
+      Alert errorDialog = new Alert(Alert.AlertType.ERROR);
+      errorDialog.setTitle("削除エラー");
+      errorDialog.setHeaderText("予期しないエラーが発生しました");
+      errorDialog.setContentText("エラー: " + e.getMessage());
+      errorDialog.showAndWait();
     }
   }
 }

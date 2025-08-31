@@ -14,6 +14,8 @@
           <children>
             <Button fx:id="selectDirectoryButton" mnemonicParsing="false" onAction="#handleSelectDirectory" text="ディレクトリ選択" />
             <Button fx:id="scanButton" mnemonicParsing="false" onAction="#handleScan" text="スキャン開始" />
+            <Button fx:id="showInFinderButton" mnemonicParsing="false" onAction="#handleShowInFinder" text="Finder/エクスプローラーで表示" disable="true" />
+            <Button fx:id="deleteButton" mnemonicParsing="false" onAction="#handleDelete" text="選択ファイル削除" disable="true" />
             <Button fx:id="exportCsvButton" mnemonicParsing="false" onAction="#handleExportCsv" text="CSV出力" />
             <Button fx:id="exportJsonButton" mnemonicParsing="false" onAction="#handleExportJson" text="JSON出力" />
           </children>
