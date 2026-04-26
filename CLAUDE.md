@@ -18,7 +18,8 @@ LumiDisk は JavaFX 製の Windows / macOS 向けディスク使用量分析ツ�
 
 - Gradle Wrapper 同梱。Java 21 toolchain が `build.gradle.kts` で固定されている。
 - `mainClass` は `com.example.diskanalyzer.MainApp`。
-- **Wrapper jar 欠落の罠**: `gradle/wrapper/gradle-wrapper.jar` が tracked 対象 (.gitignore に `!` 指定) なのに実体が無い場合がある。`./gradlew` が `Unable to access jarfile` で失敗したら、システム gradle を入れて `gradle wrapper --gradle-version 9.0.0` で再生成するか、暫定的に `gradle build` で直接実行する。
+- `gradle/wrapper/gradle-wrapper.jar` は `b59e615` で track 済み。万一再生成が必要なら `gradle wrapper --gradle-version 9.0.0`。
+- **`.gitignore` 順序の落とし穴**: `*.jar` (行 59) より **後** に `!gradle/wrapper/gradle-wrapper.jar` の negation を再宣言している (`.gitignore` 末尾)。前段の `!` だけでは `*.jar` で上書きされるため、`.gitignore` を編集する際はこの順序を崩さないこと。
 - **macOS で Java 未導入の場合**: `brew install openjdk@21` 後、`JAVA_HOME=$(brew --prefix openjdk@21)/libexec/openjdk.jdk/Contents/Home` を設定。README に詳細手順あり。
 
 ## アーキテクチャ概要
