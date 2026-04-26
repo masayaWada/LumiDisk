@@ -69,7 +69,12 @@ public class FileManagerService {
       }
 
       Process process = Runtime.getRuntime().exec(command);
-      int exitCode = process.waitFor();
+      int exitCode;
+      try {
+        exitCode = process.waitFor();
+      } finally {
+        closeProcessStreams(process);
+      }
 
       if (exitCode == 0) {
         logger.info("Finderで表示しました: {}", path);
@@ -102,7 +107,12 @@ public class FileManagerService {
       }
 
       Process process = Runtime.getRuntime().exec(command);
-      int exitCode = process.waitFor();
+      int exitCode;
+      try {
+        exitCode = process.waitFor();
+      } finally {
+        closeProcessStreams(process);
+      }
 
       if (exitCode == 0) {
         logger.info("エクスプローラーで表示しました: {}", path);
@@ -145,7 +155,12 @@ public class FileManagerService {
           }
 
           Process process = Runtime.getRuntime().exec(command);
-          int exitCode = process.waitFor();
+          int exitCode;
+          try {
+            exitCode = process.waitFor();
+          } finally {
+            closeProcessStreams(process);
+          }
 
           if (exitCode == 0) {
             logger.info("{}で表示しました: {}", fileManager, path);
@@ -201,10 +216,35 @@ public class FileManagerService {
   private boolean isCommandAvailable(String command) {
     try {
       Process process = Runtime.getRuntime().exec("which " + command);
-      int exitCode = process.waitFor();
+      int exitCode;
+      try {
+        exitCode = process.waitFor();
+      } finally {
+        closeProcessStreams(process);
+      }
       return exitCode == 0;
     } catch (Exception e) {
       return false;
+    }
+  }
+
+  /**
+   * Process の I/O ストリームを確実にクローズする。
+   * waitFor 後に呼び出すことで FD リークを防ぐ。
+   */
+  private void closeProcessStreams(Process process) {
+    try {
+      process.getInputStream().close();
+    } catch (IOException ignored) {
+      // クローズ失敗は無視（プロセス終了後のクローズで起きうる）
+    }
+    try {
+      process.getErrorStream().close();
+    } catch (IOException ignored) {
+    }
+    try {
+      process.getOutputStream().close();
+    } catch (IOException ignored) {
     }
   }
 

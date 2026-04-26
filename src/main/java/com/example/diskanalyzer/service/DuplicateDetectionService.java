@@ -14,6 +14,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.RecursiveTask;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 重複ファイル検出サービス
@@ -22,14 +23,15 @@ import java.util.concurrent.RecursiveTask;
 public class DuplicateDetectionService {
   private static final Logger logger = LoggerFactory.getLogger(DuplicateDetectionService.class);
   private static final int CHUNK_SIZE = 8192; // 8KB chunks for hashing
-  private final ForkJoinPool pool;
+  private final int parallelism;
+  private volatile ForkJoinPool currentPool;
 
   public DuplicateDetectionService() {
-    this.pool = new ForkJoinPool(Runtime.getRuntime().availableProcessors());
+    this.parallelism = Runtime.getRuntime().availableProcessors();
   }
 
   public DuplicateDetectionService(int parallelism) {
-    this.pool = new ForkJoinPool(parallelism);
+    this.parallelism = parallelism;
   }
 
   /**
@@ -57,10 +59,17 @@ public class DuplicateDetectionService {
 
     logger.info("ハッシュ計算対象: {} ファイル", candidatesForHashing.size());
 
-    // ハッシュ計算を並列実行
+    // ハッシュ計算を並列実行（呼び出しごとに専用プールを生成し、確実に解放する）
     Map<String, List<FileNode>> hashGroups = new ConcurrentHashMap<>();
-    HashCalculationTask task = new HashCalculationTask(candidatesForHashing, 0, candidatesForHashing.size());
-    pool.submit(task).join();
+    ForkJoinPool pool = new ForkJoinPool(parallelism);
+    this.currentPool = pool;
+    try {
+      HashCalculationTask task = new HashCalculationTask(candidatesForHashing, 0, candidatesForHashing.size());
+      pool.submit(task).join();
+    } finally {
+      shutdownPool(pool);
+      this.currentPool = null;
+    }
 
     // 結果を収集
     for (FileNode file : candidatesForHashing) {
@@ -163,9 +172,32 @@ public class DuplicateDetectionService {
   }
 
   /**
-   * リソースを解放する
+   * 実行中の ForkJoinPool があれば確実に解放する。
+   * 二重呼び出ししても安全。findDuplicates が走っていなければ no-op。
    */
   public void shutdown() {
+    ForkJoinPool pool = this.currentPool;
+    if (pool != null) {
+      shutdownPool(pool);
+    }
+  }
+
+  /**
+   * ForkJoinPool を堅牢に解放する。
+   */
+  private void shutdownPool(ForkJoinPool pool) {
+    if (pool.isShutdown()) {
+      return;
+    }
     pool.shutdown();
+    try {
+      if (!pool.awaitTermination(5, TimeUnit.SECONDS)) {
+        logger.warn("DuplicateDetectionService ForkJoinPool が時間内に終了しなかったため shutdownNow を呼びます");
+        pool.shutdownNow();
+      }
+    } catch (InterruptedException e) {
+      pool.shutdownNow();
+      Thread.currentThread().interrupt();
+    }
   }
 }

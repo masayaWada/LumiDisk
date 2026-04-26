@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 /**
  * スキャン結果のキャッシュ管理サービス
@@ -94,17 +95,19 @@ public class ScanCacheService {
 
       String pathHash = String.valueOf(rootPath.toString().hashCode());
 
-      Files.list(cacheDirectory)
-          .filter(path -> path.getFileName().toString().startsWith(pathHash))
-          .filter(path -> path.getFileName().toString().endsWith(SNAPSHOT_EXTENSION))
-          .forEach(path -> {
-            try {
-              ScanSnapshot snapshot = objectMapper.readValue(path.toFile(), ScanSnapshot.class);
-              snapshots.add(snapshot);
-            } catch (IOException e) {
-              logger.warn("スナップショットの読み込みに失敗: {}", path, e);
-            }
-          });
+      try (Stream<Path> stream = Files.list(cacheDirectory)) {
+        stream
+            .filter(path -> path.getFileName().toString().startsWith(pathHash))
+            .filter(path -> path.getFileName().toString().endsWith(SNAPSHOT_EXTENSION))
+            .forEach(path -> {
+              try {
+                ScanSnapshot snapshot = objectMapper.readValue(path.toFile(), ScanSnapshot.class);
+                snapshots.add(snapshot);
+              } catch (IOException e) {
+                logger.warn("スナップショットの読み込みに失敗: {}", path, e);
+              }
+            });
+      }
 
     } catch (IOException e) {
       logger.error("スナップショット一覧の取得に失敗", e);
@@ -139,17 +142,19 @@ public class ScanCacheService {
     try {
       String pathHash = String.valueOf(rootPath.toString().hashCode());
 
-      Files.list(cacheDirectory)
-          .filter(path -> path.getFileName().toString().startsWith(pathHash))
-          .filter(path -> path.getFileName().toString().endsWith(SNAPSHOT_EXTENSION))
-          .forEach(path -> {
-            try {
-              Files.delete(path);
-              logger.info("スナップショットを削除しました: {}", path);
-            } catch (IOException e) {
-              logger.warn("スナップショットの削除に失敗: {}", path, e);
-            }
-          });
+      try (Stream<Path> stream = Files.list(cacheDirectory)) {
+        stream
+            .filter(path -> path.getFileName().toString().startsWith(pathHash))
+            .filter(path -> path.getFileName().toString().endsWith(SNAPSHOT_EXTENSION))
+            .forEach(path -> {
+              try {
+                Files.delete(path);
+                logger.info("スナップショットを削除しました: {}", path);
+              } catch (IOException e) {
+                logger.warn("スナップショットの削除に失敗: {}", path, e);
+              }
+            });
+      }
     } catch (IOException e) {
       logger.error("スナップショット一括削除に失敗", e);
     }
@@ -164,16 +169,18 @@ public class ScanCacheService {
         return 0;
       }
 
-      return Files.list(cacheDirectory)
-          .filter(path -> path.getFileName().toString().endsWith(SNAPSHOT_EXTENSION))
-          .mapToLong(path -> {
-            try {
-              return Files.size(path);
-            } catch (IOException e) {
-              return 0;
-            }
-          })
-          .sum();
+      try (Stream<Path> stream = Files.list(cacheDirectory)) {
+        return stream
+            .filter(path -> path.getFileName().toString().endsWith(SNAPSHOT_EXTENSION))
+            .mapToLong(path -> {
+              try {
+                return Files.size(path);
+              } catch (IOException e) {
+                return 0;
+              }
+            })
+            .sum();
+      }
     } catch (IOException e) {
       logger.error("キャッシュサイズの取得に失敗", e);
       return 0;
@@ -189,15 +196,17 @@ public class ScanCacheService {
         return;
       }
 
-      Files.list(cacheDirectory)
-          .filter(path -> path.getFileName().toString().endsWith(SNAPSHOT_EXTENSION))
-          .forEach(path -> {
-            try {
-              Files.delete(path);
-            } catch (IOException e) {
-              logger.warn("キャッシュファイルの削除に失敗: {}", path, e);
-            }
-          });
+      try (Stream<Path> stream = Files.list(cacheDirectory)) {
+        stream
+            .filter(path -> path.getFileName().toString().endsWith(SNAPSHOT_EXTENSION))
+            .forEach(path -> {
+              try {
+                Files.delete(path);
+              } catch (IOException e) {
+                logger.warn("キャッシュファイルの削除に失敗: {}", path, e);
+              }
+            });
+      }
 
       logger.info("キャッシュをクリアしました");
     } catch (IOException e) {
@@ -220,9 +229,11 @@ public class ScanCacheService {
   private void cleanupOldCache() {
     try {
       List<Path> cacheFiles = new ArrayList<>();
-      Files.list(cacheDirectory)
-          .filter(path -> path.getFileName().toString().endsWith(SNAPSHOT_EXTENSION))
-          .forEach(cacheFiles::add);
+      try (Stream<Path> stream = Files.list(cacheDirectory)) {
+        stream
+            .filter(path -> path.getFileName().toString().endsWith(SNAPSHOT_EXTENSION))
+            .forEach(cacheFiles::add);
+      }
 
       if (cacheFiles.size() > MAX_CACHE_SIZE) {
         // 作成日時順でソートして古いものから削除

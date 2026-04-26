@@ -44,6 +44,8 @@ public class ScanTask extends Task<ScanResult> {
       logger.error("スキャンタスクでエラーが発生", e);
       updateMessage("エラー: " + e.getMessage());
       throw e;
+    } finally {
+      fileScanner.shutdown();
     }
   }
 

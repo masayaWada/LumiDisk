@@ -12,11 +12,9 @@ import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ForkJoinPool;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 増分スキャンサービス
@@ -25,14 +23,14 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class IncrementalScanService {
   private static final Logger logger = LoggerFactory.getLogger(IncrementalScanService.class);
 
-  private final FileScanner fileScanner;
   private final ScanCacheService cacheService;
-  private final ForkJoinPool pool;
+  private final int parallelism;
+  private volatile ForkJoinPool currentPool;
+  private volatile FileScanner currentFileScanner;
 
   public IncrementalScanService() {
-    this.fileScanner = new FileScanner();
     this.cacheService = new ScanCacheService();
-    this.pool = new ForkJoinPool(Runtime.getRuntime().availableProcessors());
+    this.parallelism = Runtime.getRuntime().availableProcessors();
   }
 
   /**
@@ -94,7 +92,15 @@ public class IncrementalScanService {
     logger.info("フルスキャン実行: {}", rootPath);
     long startTime = System.currentTimeMillis();
 
-    ScanResult result = fileScanner.scan(rootPath);
+    FileScanner fileScanner = new FileScanner(parallelism);
+    this.currentFileScanner = fileScanner;
+    ScanResult result;
+    try {
+      result = fileScanner.scan(rootPath);
+    } finally {
+      fileScanner.shutdown();
+      this.currentFileScanner = null;
+    }
 
     // スナップショットを保存
     ScanSnapshot snapshot = new ScanSnapshot(
@@ -191,28 +197,35 @@ public class IncrementalScanService {
       previousFiles.put(file.getPath(), file);
     }
 
-    // 変更されたファイルを並列処理
-    pool.submit(() -> {
-      changedFiles.parallelStream().forEach(path -> {
-        try {
-          if (Files.exists(path)) {
-            BasicFileAttributes attrs = Files.readAttributes(path, BasicFileAttributes.class);
-            boolean isHidden = Files.isHidden(path);
+    // 変更されたファイルを並列処理（呼び出しごとに専用プールを生成し、確実に解放する）
+    ForkJoinPool pool = new ForkJoinPool(parallelism);
+    this.currentPool = pool;
+    try {
+      pool.submit(() -> {
+        changedFiles.parallelStream().forEach(path -> {
+          try {
+            if (Files.exists(path)) {
+              BasicFileAttributes attrs = Files.readAttributes(path, BasicFileAttributes.class);
+              boolean isHidden = Files.isHidden(path);
 
-            FileNode fileNode = new FileNode(
-                path,
-                attrs.size(),
-                attrs.lastModifiedTime(),
-                attrs.isDirectory(),
-                isHidden);
+              FileNode fileNode = new FileNode(
+                  path,
+                  attrs.size(),
+                  attrs.lastModifiedTime(),
+                  attrs.isDirectory(),
+                  isHidden);
 
-            newFiles.add(fileNode);
+              newFiles.add(fileNode);
+            }
+          } catch (IOException e) {
+            logger.warn("ファイル再スキャンエラー: {}", path, e);
           }
-        } catch (IOException e) {
-          logger.warn("ファイル再スキャンエラー: {}", path, e);
-        }
-      });
-    }).join();
+        });
+      }).join();
+    } finally {
+      shutdownPool(pool);
+      this.currentPool = null;
+    }
 
     return new ArrayList<>(newFiles);
   }
@@ -268,9 +281,36 @@ public class IncrementalScanService {
   }
 
   /**
-   * リソースを解放する
+   * 実行中の ForkJoinPool / FileScanner があれば確実に解放する。
+   * 二重呼び出ししても安全。スキャンが走っていなければ no-op。
    */
   public void shutdown() {
+    ForkJoinPool pool = this.currentPool;
+    if (pool != null) {
+      shutdownPool(pool);
+    }
+    FileScanner fileScanner = this.currentFileScanner;
+    if (fileScanner != null) {
+      fileScanner.shutdown();
+    }
+  }
+
+  /**
+   * ForkJoinPool を堅牢に解放する。
+   */
+  private void shutdownPool(ForkJoinPool pool) {
+    if (pool.isShutdown()) {
+      return;
+    }
     pool.shutdown();
+    try {
+      if (!pool.awaitTermination(5, TimeUnit.SECONDS)) {
+        logger.warn("IncrementalScanService ForkJoinPool が時間内に終了しなかったため shutdownNow を呼びます");
+        pool.shutdownNow();
+      }
+    } catch (InterruptedException e) {
+      pool.shutdownNow();
+      Thread.currentThread().interrupt();
+    }
   }
 }

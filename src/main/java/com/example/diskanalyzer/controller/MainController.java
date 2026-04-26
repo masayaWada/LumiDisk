@@ -555,6 +555,7 @@ public class MainController implements Initializable {
 
     duplicateTask.setOnSucceeded(e -> {
       List<DuplicateGroup> duplicates = duplicateTask.getValue();
+      duplicateService.shutdown();
       Platform.runLater(() -> {
         findDuplicatesButton.setDisable(false);
         statusLabel.setText("重複ファイル検出完了: " + duplicates.size() + " グループ");
@@ -565,6 +566,7 @@ public class MainController implements Initializable {
     });
 
     duplicateTask.setOnFailed(e -> {
+      duplicateService.shutdown();
       Platform.runLater(() -> {
         findDuplicatesButton.setDisable(false);
         statusLabel.setText("重複ファイル検出エラー: " + duplicateTask.getException().getMessage());
@@ -600,6 +602,7 @@ public class MainController implements Initializable {
 
     incrementalTask.setOnSucceeded(e -> {
       ScanResult result = incrementalTask.getValue();
+      incrementalService.shutdown();
       Platform.runLater(() -> {
         currentScanResult = result;
         updateUI();
@@ -615,6 +618,7 @@ public class MainController implements Initializable {
     });
 
     incrementalTask.setOnFailed(e -> {
+      incrementalService.shutdown();
       Platform.runLater(() -> {
         incrementalScanButton.setDisable(false);
         statusLabel.setText("増分スキャンエラー: " + incrementalTask.getException().getMessage());

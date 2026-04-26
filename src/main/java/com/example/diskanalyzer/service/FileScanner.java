@@ -12,6 +12,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -47,72 +48,67 @@ public class FileScanner {
     AtomicInteger directoryCount = new AtomicInteger(0);
     Map<String, AtomicLong> extensionStats = new ConcurrentHashMap<>();
 
-    try {
-      pool.submit(() -> {
-        try {
-          Files.walkFileTree(root, new SimpleFileVisitor<Path>() {
-            @Override
-            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
-              try {
-                boolean isHidden = Files.isHidden(file);
-                FileNode fileNode = new FileNode(
-                    file,
-                    attrs.size(),
-                    attrs.lastModifiedTime(),
-                    false,
-                    isHidden);
+    pool.submit(() -> {
+      try {
+        Files.walkFileTree(root, new SimpleFileVisitor<Path>() {
+          @Override
+          public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+            try {
+              boolean isHidden = Files.isHidden(file);
+              FileNode fileNode = new FileNode(
+                  file,
+                  attrs.size(),
+                  attrs.lastModifiedTime(),
+                  false,
+                  isHidden);
 
-                results.add(fileNode);
-                totalSize.addAndGet(attrs.size());
-                fileCount.incrementAndGet();
+              results.add(fileNode);
+              totalSize.addAndGet(attrs.size());
+              fileCount.incrementAndGet();
 
-                // 拡張子統計
-                String ext = fileNode.getExtension();
-                if (!ext.isEmpty()) {
-                  extensionStats.computeIfAbsent(ext, k -> new AtomicLong(0))
-                      .addAndGet(attrs.size());
-                }
-
-              } catch (IOException e) {
-                logger.warn("ファイルアクセスエラー: {}", file, e);
+              // 拡張子統計
+              String ext = fileNode.getExtension();
+              if (!ext.isEmpty()) {
+                extensionStats.computeIfAbsent(ext, k -> new AtomicLong(0))
+                    .addAndGet(attrs.size());
               }
-              return FileVisitResult.CONTINUE;
+
+            } catch (IOException e) {
+              logger.warn("ファイルアクセスエラー: {}", file, e);
             }
+            return FileVisitResult.CONTINUE;
+          }
 
-            @Override
-            public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
-              try {
-                boolean isHidden = Files.isHidden(dir);
-                FileNode dirNode = new FileNode(
-                    dir,
-                    0,
-                    attrs.lastModifiedTime(),
-                    true,
-                    isHidden);
+          @Override
+          public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
+            try {
+              boolean isHidden = Files.isHidden(dir);
+              FileNode dirNode = new FileNode(
+                  dir,
+                  0,
+                  attrs.lastModifiedTime(),
+                  true,
+                  isHidden);
 
-                results.add(dirNode);
-                directoryCount.incrementAndGet();
+              results.add(dirNode);
+              directoryCount.incrementAndGet();
 
-              } catch (IOException e) {
-                logger.warn("ディレクトリアクセスエラー: {}", dir, e);
-              }
-              return FileVisitResult.CONTINUE;
+            } catch (IOException e) {
+              logger.warn("ディレクトリアクセスエラー: {}", dir, e);
             }
+            return FileVisitResult.CONTINUE;
+          }
 
-            @Override
-            public FileVisitResult visitFileFailed(Path file, IOException exc) {
-              logger.warn("ファイルアクセス失敗: {}", file, exc);
-              return FileVisitResult.CONTINUE;
-            }
-          });
-        } catch (IOException e) {
-          logger.error("スキャン中にエラーが発生", e);
-        }
-      }).join();
-
-    } finally {
-      pool.shutdown();
-    }
+          @Override
+          public FileVisitResult visitFileFailed(Path file, IOException exc) {
+            logger.warn("ファイルアクセス失敗: {}", file, exc);
+            return FileVisitResult.CONTINUE;
+          }
+        });
+      } catch (IOException e) {
+        logger.error("スキャン中にエラーが発生", e);
+      }
+    }).join();
 
     long endTime = System.currentTimeMillis();
     long scanDuration = endTime - startTime;
@@ -132,6 +128,26 @@ public class FileScanner {
         fileCount.get(),
         directoryCount.get(),
         scanDuration);
+  }
+
+  /**
+   * ForkJoinPool を確実に解放する。awaitTermination が時間内に完了しない場合は shutdownNow を呼ぶ。
+   * 二重呼び出ししても安全。
+   */
+  public void shutdown() {
+    if (pool.isShutdown()) {
+      return;
+    }
+    pool.shutdown();
+    try {
+      if (!pool.awaitTermination(5, TimeUnit.SECONDS)) {
+        logger.warn("FileScanner ForkJoinPool が時間内に終了しなかったため shutdownNow を呼びます");
+        pool.shutdownNow();
+      }
+    } catch (InterruptedException e) {
+      pool.shutdownNow();
+      Thread.currentThread().interrupt();
+    }
   }
 
   private String formatSize(long bytes) {
