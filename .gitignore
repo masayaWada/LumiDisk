@@ -64,5 +64,8 @@ logs/
 *.tar.gz
 *.rar
 
+# Gradle Wrapper jar は track 対象 (行 4 の negation を *.jar より後に再宣言)
+!gradle/wrapper/gradle-wrapper.jar
+
 # Virtual machine crash logs
 hs_err_pid*
