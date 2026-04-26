@@ -139,9 +139,39 @@ LumiDisk/
 
 ### 必要環境
 
--   JDK 21
--   Gradle 8.x
--   Git
+-   **JDK 21**（Java 21 toolchain 固定。Java 22 以降では動作未確認）
+-   **Gradle**: リポジトリ同梱の Gradle Wrapper（`./gradlew`）を使用するため通常は不要
+    -   ただし `gradle/wrapper/gradle-wrapper.jar` が欠落している環境ではシステム
+        の Gradle 9.x が必要（後述）
+-   **Git**
+
+### JDK 21 のインストール
+
+#### macOS（Homebrew）
+
+``` bash
+brew install openjdk@21
+
+# JAVA_HOME を設定（zsh の例）
+echo 'export JAVA_HOME=$(brew --prefix openjdk@21)/libexec/openjdk.jdk/Contents/Home' >> ~/.zshrc
+echo 'export PATH="$JAVA_HOME/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+
+# 確認
+java -version  # => openjdk version "21.x.x"
+```
+
+#### Windows
+
+[Adoptium Temurin 21](https://adoptium.net/temurin/releases/?version=21)
+からインストーラを取得し、インストール時に `JAVA_HOME` 環境変数の設定オプションを
+有効にしてください。
+
+PowerShell で確認:
+
+``` powershell
+java -version
+```
 
 ### ビルド手順
 
@@ -151,10 +181,32 @@ cd LumiDisk
 ./gradlew clean build
 ```
 
+### gradle-wrapper.jar が無い場合のフォールバック
+
+Wrapper jar が欠落しているクローンでは `./gradlew` が
+`Unable to access jarfile gradle/wrapper/gradle-wrapper.jar` で失敗します。
+その場合は次のいずれかで復旧してください。
+
+``` bash
+# 方法 A: システム Gradle で wrapper を再生成（推奨）
+brew install gradle           # macOS
+gradle wrapper --gradle-version 9.0.0
+
+# 方法 B: 一度だけシステム Gradle で直接ビルド
+gradle build
+```
+
 ### 実行方法
 
 ``` bash
 ./gradlew run
+```
+
+### テスト実行
+
+``` bash
+./gradlew test                  # 全テスト
+./gradlew test --tests <FQCN>   # 単一テストクラス
 ```
 
 ### パッケージング（exe/app 作成）
@@ -163,7 +215,11 @@ cd LumiDisk
 ./gradlew jpackage
 ```
 
-出力先は `build/jpackage/` 配下になります。
+> 注: 現状 `jpackage` タスクは `build.gradle.kts` で定義されていません。
+> 配布パッケージングは未構成のため、追加には `org.beryx.runtime` プラグイン等の
+> 導入が必要です（[`docs/開発ガイド.md`](./docs/開発ガイド.md) 参照）。
+
+出力先は `build/jpackage/` 配下になる予定です。
 
 ### build.gradle.kts（主要設定）
 
