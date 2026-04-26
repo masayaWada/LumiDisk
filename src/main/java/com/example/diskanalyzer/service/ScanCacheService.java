@@ -1,8 +1,16 @@
 package com.example.diskanalyzer.service;
 
 import com.example.diskanalyzer.model.ScanSnapshot;
+import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.databind.DeserializationContext;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonDeserializer;
+import com.fasterxml.jackson.databind.JsonSerializer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.SerializerProvider;
+import com.fasterxml.jackson.databind.module.SimpleModule;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,6 +20,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.attribute.FileTime;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -33,20 +43,73 @@ public class ScanCacheService {
   private final Path cacheDirectory;
 
   public ScanCacheService() {
-    this.objectMapper = new ObjectMapper();
-    this.objectMapper.registerModule(new JavaTimeModule());
-    this.objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-    this.objectMapper.enable(SerializationFeature.INDENT_OUTPUT);
+    this(defaultCacheDirectory(), defaultObjectMapper());
+  }
 
-    // キャッシュディレクトリの設定
-    String userHome = System.getProperty("user.home");
-    this.cacheDirectory = Paths.get(userHome, ".lumidisk", CACHE_DIR);
+  /**
+   * テストや代替設定向けに、キャッシュディレクトリと ObjectMapper を注入できるコンストラクタ。
+   *
+   * @param cacheDirectory スナップショット保存先
+   * @param objectMapper   シリアライズに使う ObjectMapper (caller が JavaTime 等を構成済み想定)
+   */
+  public ScanCacheService(Path cacheDirectory, ObjectMapper objectMapper) {
+    if (cacheDirectory == null) {
+      throw new IllegalArgumentException("cacheDirectory must not be null");
+    }
+    if (objectMapper == null) {
+      throw new IllegalArgumentException("objectMapper must not be null");
+    }
+    this.cacheDirectory = cacheDirectory;
+    this.objectMapper = objectMapper;
 
     try {
       Files.createDirectories(cacheDirectory);
     } catch (IOException e) {
       logger.error("キャッシュディレクトリの作成に失敗", e);
     }
+  }
+
+  /** デフォルトのキャッシュディレクトリ ({@code ~/.lumidisk/cache}) を返す。 */
+  private static Path defaultCacheDirectory() {
+    String userHome = System.getProperty("user.home");
+    return Paths.get(userHome, ".lumidisk", CACHE_DIR);
+  }
+
+  /** JavaTime + FileTime + 整形済みの既定 ObjectMapper を返す。 */
+  private static ObjectMapper defaultObjectMapper() {
+    ObjectMapper mapper = new ObjectMapper();
+    mapper.registerModule(new JavaTimeModule());
+    mapper.registerModule(fileTimeModule());
+    mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+    mapper.enable(SerializationFeature.INDENT_OUTPUT);
+    // モデルクラスに getter のみのフィールド (例: FileNode.extension) があるため、
+    // 既存スナップショット JSON にあっても deserialize 失敗しないよう寛容に扱う。
+    mapper.disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+    return mapper;
+  }
+
+  /**
+   * {@link FileTime} を ISO-8601 文字列で serialize/deserialize する Jackson モジュール。
+   * Jackson 既定では FileTime は BeanSerializer で処理しようとして失敗するため
+   * ({@code No serializer found for class java.nio.file.attribute.FileTime})、
+   * 専用のシリアライザで {@link Instant} と相互変換する。
+   */
+  private static SimpleModule fileTimeModule() {
+    SimpleModule module = new SimpleModule("FileTimeModule");
+    module.addSerializer(FileTime.class, new JsonSerializer<FileTime>() {
+      @Override
+      public void serialize(FileTime value, JsonGenerator gen, SerializerProvider serializers)
+          throws IOException {
+        gen.writeString(value.toInstant().toString());
+      }
+    });
+    module.addDeserializer(FileTime.class, new JsonDeserializer<FileTime>() {
+      @Override
+      public FileTime deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
+        return FileTime.from(Instant.parse(p.getValueAsString()));
+      }
+    });
+    return module;
   }
 
   /**

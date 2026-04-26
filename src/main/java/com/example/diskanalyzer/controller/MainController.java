@@ -1,5 +1,8 @@
 package com.example.diskanalyzer.controller;
 
+import com.example.diskanalyzer.controller.dialog.DuplicateDialogController;
+import com.example.diskanalyzer.controller.dialog.ExtensionStatsDialogController;
+import com.example.diskanalyzer.controller.dialog.TreeMapDialogController;
 import com.example.diskanalyzer.model.FileNode;
 import com.example.diskanalyzer.model.ScanResult;
 import com.example.diskanalyzer.model.DuplicateGroup;
@@ -10,7 +13,6 @@ import com.example.diskanalyzer.service.FileManagerService;
 import com.example.diskanalyzer.service.DuplicateDetectionService;
 import com.example.diskanalyzer.service.IncrementalScanService;
 import com.example.diskanalyzer.service.VisualizationService;
-import com.example.diskanalyzer.controller.VirtualizedTableController;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -553,25 +555,22 @@ public class MainController implements Initializable {
       }
     };
 
+    // Task.setOnSucceeded/setOnFailed のコールバックは元から FX Application Thread で
+    // 実行されるため、内側の Platform.runLater は冗長 (Phase 3 で撤去)。
     duplicateTask.setOnSucceeded(e -> {
       List<DuplicateGroup> duplicates = duplicateTask.getValue();
       duplicateService.shutdown();
-      Platform.runLater(() -> {
-        findDuplicatesButton.setDisable(false);
-        statusLabel.setText("重複ファイル検出完了: " + duplicates.size() + " グループ");
-
-        // 重複ファイルダイアログを表示
-        showDuplicateDialog(duplicates);
-      });
+      findDuplicatesButton.setDisable(false);
+      statusLabel.setText("重複ファイル検出完了: " + duplicates.size() + " グループ");
+      // 重複ファイルダイアログを表示
+      DuplicateDialogController.show(duplicates);
     });
 
     duplicateTask.setOnFailed(e -> {
       duplicateService.shutdown();
-      Platform.runLater(() -> {
-        findDuplicatesButton.setDisable(false);
-        statusLabel.setText("重複ファイル検出に失敗しました (詳細はログを参照)");
-        logger.error("重複ファイル検出エラー", duplicateTask.getException());
-      });
+      findDuplicatesButton.setDisable(false);
+      statusLabel.setText("重複ファイル検出に失敗しました (詳細はログを参照)");
+      logger.error("重複ファイル検出エラー", duplicateTask.getException());
     });
 
     Thread duplicateThread = new Thread(duplicateTask);
@@ -603,27 +602,23 @@ public class MainController implements Initializable {
     incrementalTask.setOnSucceeded(e -> {
       ScanResult result = incrementalTask.getValue();
       incrementalService.shutdown();
-      Platform.runLater(() -> {
-        currentScanResult = result;
-        updateUI();
-        incrementalScanButton.setDisable(false);
-        statusLabel.setText("増分スキャン完了");
-        scanInfoLabel.setText(String.format(
-            "ファイル: %d件, ディレクトリ: %d件, 総サイズ: %s, 所要時間: %s",
-            result.getTotalFiles(),
-            result.getTotalDirectories(),
-            result.getFormattedTotalSize(),
-            result.getFormattedScanDuration()));
-      });
+      currentScanResult = result;
+      updateUI();
+      incrementalScanButton.setDisable(false);
+      statusLabel.setText("増分スキャン完了");
+      scanInfoLabel.setText(String.format(
+          "ファイル: %d件, ディレクトリ: %d件, 総サイズ: %s, 所要時間: %s",
+          result.getTotalFiles(),
+          result.getTotalDirectories(),
+          result.getFormattedTotalSize(),
+          result.getFormattedScanDuration()));
     });
 
     incrementalTask.setOnFailed(e -> {
       incrementalService.shutdown();
-      Platform.runLater(() -> {
-        incrementalScanButton.setDisable(false);
-        statusLabel.setText("増分スキャンに失敗しました (詳細はログを参照)");
-        logger.error("増分スキャンエラー", incrementalTask.getException());
-      });
+      incrementalScanButton.setDisable(false);
+      statusLabel.setText("増分スキャンに失敗しました (詳細はログを参照)");
+      logger.error("増分スキャンエラー", incrementalTask.getException());
     });
 
     Thread incrementalThread = new Thread(incrementalTask);
@@ -654,21 +649,16 @@ public class MainController implements Initializable {
 
     treeMapTask.setOnSucceeded(e -> {
       TreeNode rootNode = treeMapTask.getValue();
-      Platform.runLater(() -> {
-        treeMapButton.setDisable(false);
-        statusLabel.setText("ツリーマップ作成完了");
-
-        // ツリーマップダイアログを表示
-        showTreeMapDialog(rootNode);
-      });
+      treeMapButton.setDisable(false);
+      statusLabel.setText("ツリーマップ作成完了");
+      // ツリーマップダイアログを表示
+      TreeMapDialogController.show(rootNode);
     });
 
     treeMapTask.setOnFailed(e -> {
-      Platform.runLater(() -> {
-        treeMapButton.setDisable(false);
-        statusLabel.setText("ツリーマップ作成に失敗しました (詳細はログを参照)");
-        logger.error("ツリーマップ作成エラー", treeMapTask.getException());
-      });
+      treeMapButton.setDisable(false);
+      statusLabel.setText("ツリーマップ作成に失敗しました (詳細はログを参照)");
+      logger.error("ツリーマップ作成エラー", treeMapTask.getException());
     });
 
     Thread treeMapThread = new Thread(treeMapTask);
@@ -699,21 +689,16 @@ public class MainController implements Initializable {
 
     statsTask.setOnSucceeded(e -> {
       Map<String, VisualizationService.ExtensionStats> stats = statsTask.getValue();
-      Platform.runLater(() -> {
-        extensionStatsButton.setDisable(false);
-        statusLabel.setText("拡張子統計作成完了: " + stats.size() + " 種類");
-
-        // 拡張子統計ダイアログを表示
-        showExtensionStatsDialog(stats);
-      });
+      extensionStatsButton.setDisable(false);
+      statusLabel.setText("拡張子統計作成完了: " + stats.size() + " 種類");
+      // 拡張子統計ダイアログを表示
+      ExtensionStatsDialogController.show(stats);
     });
 
     statsTask.setOnFailed(e -> {
-      Platform.runLater(() -> {
-        extensionStatsButton.setDisable(false);
-        statusLabel.setText("拡張子統計作成に失敗しました (詳細はログを参照)");
-        logger.error("拡張子統計作成エラー", statsTask.getException());
-      });
+      extensionStatsButton.setDisable(false);
+      statusLabel.setText("拡張子統計作成に失敗しました (詳細はログを参照)");
+      logger.error("拡張子統計作成エラー", statsTask.getException());
     });
 
     Thread statsThread = new Thread(statsTask);
@@ -721,101 +706,4 @@ public class MainController implements Initializable {
     statsThread.start();
   }
 
-  /**
-   * 重複ファイルダイアログを表示する
-   */
-  private void showDuplicateDialog(List<DuplicateGroup> duplicates) {
-    Alert dialog = new Alert(Alert.AlertType.INFORMATION);
-    dialog.setTitle("重複ファイル検出結果");
-    dialog.setHeaderText("重複ファイルが見つかりました");
-
-    StringBuilder content = new StringBuilder();
-    content.append("重複グループ数: ").append(duplicates.size()).append("\n\n");
-
-    long totalWastedSpace = 0;
-    for (DuplicateGroup group : duplicates) {
-      totalWastedSpace += group.getWastedSpace();
-      content.append("• ").append(group.getExtension()).append(" ファイル (")
-          .append(group.getDuplicateCount()).append(" 件): ")
-          .append(group.getFormattedWastedSpace()).append(" の無駄\n");
-    }
-
-    content.append("\n総無駄容量: ").append(formatSize(totalWastedSpace));
-
-    dialog.setContentText(content.toString());
-    dialog.showAndWait();
-  }
-
-  /**
-   * ツリーマップダイアログを表示する
-   */
-  private void showTreeMapDialog(TreeNode rootNode) {
-    Alert dialog = new Alert(Alert.AlertType.INFORMATION);
-    dialog.setTitle("ツリーマップ");
-    dialog.setHeaderText("ディレクトリ構造の可視化");
-
-    StringBuilder content = new StringBuilder();
-    content.append("ルートディレクトリ: ").append(rootNode.getName()).append("\n");
-    content.append("総サイズ: ").append(rootNode.getFormattedSize()).append("\n\n");
-
-    // 上位10個のディレクトリを表示
-    List<TreeNode> topDirectories = rootNode.getChildren().stream()
-        .filter(TreeNode::isDirectory)
-        .sorted((a, b) -> Long.compare(b.getSize(), a.getSize()))
-        .limit(10)
-        .collect(java.util.stream.Collectors.toList());
-
-    content.append("上位ディレクトリ:\n");
-    for (TreeNode dir : topDirectories) {
-      content.append("• ").append(dir.getName()).append(": ")
-          .append(dir.getFormattedSize()).append(" (")
-          .append(String.format("%.1f", dir.getSizePercentage(rootNode.getSize())))
-          .append("%)\n");
-    }
-
-    dialog.setContentText(content.toString());
-    dialog.showAndWait();
-  }
-
-  /**
-   * 拡張子統計ダイアログを表示する
-   */
-  private void showExtensionStatsDialog(Map<String, VisualizationService.ExtensionStats> stats) {
-    Alert dialog = new Alert(Alert.AlertType.INFORMATION);
-    dialog.setTitle("拡張子統計");
-    dialog.setHeaderText("ファイルタイプ別統計");
-
-    StringBuilder content = new StringBuilder();
-
-    // サイズ順でソート
-    List<VisualizationService.ExtensionStats> sortedStats = stats.values().stream()
-        .sorted((a, b) -> Long.compare(b.getTotalSize(), a.getTotalSize()))
-        .limit(15)
-        .collect(java.util.stream.Collectors.toList());
-
-    content.append("上位ファイルタイプ:\n\n");
-    for (VisualizationService.ExtensionStats stat : sortedStats) {
-      content.append("• .").append(stat.getExtension()).append(": ")
-          .append(stat.getFileCount()).append(" ファイル, ")
-          .append(stat.getFormattedTotalSize()).append("\n");
-    }
-
-    dialog.setContentText(content.toString());
-    dialog.showAndWait();
-  }
-
-  /**
-   * サイズをフォーマットする
-   */
-  private String formatSize(long bytes) {
-    if (bytes < 1024) {
-      return bytes + " B";
-    } else if (bytes < 1024 * 1024) {
-      return String.format("%.1f KB", bytes / 1024.0);
-    } else if (bytes < 1024 * 1024 * 1024) {
-      return String.format("%.1f MB", bytes / (1024.0 * 1024.0));
-    } else {
-      return String.format("%.1f GB", bytes / (1024.0 * 1024.0 * 1024.0));
-    }
-  }
 }

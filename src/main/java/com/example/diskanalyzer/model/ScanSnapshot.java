@@ -1,5 +1,8 @@
 package com.example.diskanalyzer.model;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -20,9 +23,17 @@ public class ScanSnapshot {
   private final long scanDuration;
   private final String version;
 
-  public ScanSnapshot(Path rootPath, LocalDateTime scanTime, List<FileNode> files,
-      Map<String, Long> extensionStats, long totalSize, int totalFiles,
-      int totalDirectories, long scanDuration, String version) {
+  @JsonCreator
+  public ScanSnapshot(
+      @JsonProperty("rootPath") Path rootPath,
+      @JsonProperty("scanTime") LocalDateTime scanTime,
+      @JsonProperty("files") List<FileNode> files,
+      @JsonProperty("extensionStats") Map<String, Long> extensionStats,
+      @JsonProperty("totalSize") long totalSize,
+      @JsonProperty("totalFiles") int totalFiles,
+      @JsonProperty("totalDirectories") int totalDirectories,
+      @JsonProperty("scanDuration") long scanDuration,
+      @JsonProperty("version") String version) {
     this.rootPath = rootPath;
     this.scanTime = scanTime;
     this.files = files;

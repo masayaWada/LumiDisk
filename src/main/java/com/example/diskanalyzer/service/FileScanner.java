@@ -24,15 +24,33 @@ public class FileScanner {
 
   private final ForkJoinPool pool;
   private final int parallelism;
+  private final boolean ownsPool;
 
   public FileScanner() {
     this.parallelism = Runtime.getRuntime().availableProcessors();
     this.pool = new ForkJoinPool(parallelism);
+    this.ownsPool = true;
   }
 
   public FileScanner(int parallelism) {
     this.parallelism = parallelism;
     this.pool = new ForkJoinPool(parallelism);
+    this.ownsPool = true;
+  }
+
+  /**
+   * 外部から ForkJoinPool を注入するコンストラクタ。テストや共有プール用途で使用。
+   * 注入された pool は本クラスでは shutdown しない (caller が所有権を持つ)。
+   *
+   * @param pool 共有 ForkJoinPool (caller が shutdown 責任を持つ)
+   */
+  public FileScanner(ForkJoinPool pool) {
+    if (pool == null) {
+      throw new IllegalArgumentException("pool must not be null");
+    }
+    this.pool = pool;
+    this.parallelism = pool.getParallelism();
+    this.ownsPool = false;
   }
 
   /**
@@ -132,10 +150,11 @@ public class FileScanner {
 
   /**
    * ForkJoinPool を確実に解放する。awaitTermination が時間内に完了しない場合は shutdownNow を呼ぶ。
+   * 外部から注入された pool は caller の所有物のため shutdown しない (no-op)。
    * 二重呼び出ししても安全。
    */
   public void shutdown() {
-    if (pool.isShutdown()) {
+    if (!ownsPool || pool.isShutdown()) {
       return;
     }
     pool.shutdown();

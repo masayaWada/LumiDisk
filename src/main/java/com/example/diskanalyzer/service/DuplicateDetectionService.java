@@ -24,14 +24,31 @@ public class DuplicateDetectionService {
   private static final Logger logger = LoggerFactory.getLogger(DuplicateDetectionService.class);
   private static final int CHUNK_SIZE = 8192; // 8KB chunks for hashing
   private final int parallelism;
+  private final ForkJoinPool injectedPool;
   private volatile ForkJoinPool currentPool;
 
   public DuplicateDetectionService() {
     this.parallelism = Runtime.getRuntime().availableProcessors();
+    this.injectedPool = null;
   }
 
   public DuplicateDetectionService(int parallelism) {
     this.parallelism = parallelism;
+    this.injectedPool = null;
+  }
+
+  /**
+   * 外部から ForkJoinPool を注入するコンストラクタ。テストや共有プール用途で使用。
+   * 注入された pool は本クラスでは shutdown しない (caller が所有権を持つ)。
+   *
+   * @param pool 共有 ForkJoinPool (caller が shutdown 責任を持つ)
+   */
+  public DuplicateDetectionService(ForkJoinPool pool) {
+    if (pool == null) {
+      throw new IllegalArgumentException("pool must not be null");
+    }
+    this.parallelism = pool.getParallelism();
+    this.injectedPool = pool;
   }
 
   /**
@@ -59,16 +76,23 @@ public class DuplicateDetectionService {
 
     logger.info("ハッシュ計算対象: {} ファイル", candidatesForHashing.size());
 
-    // ハッシュ計算を並列実行（呼び出しごとに専用プールを生成し、確実に解放する）
+    // ハッシュ計算を並列実行
+    // 注入 pool があればそれを使う (caller 所有・shutdown しない)。なければ呼び出しごとに
+    // 専用プールを生成し、try-finally で確実に解放する。
     Map<String, List<FileNode>> hashGroups = new ConcurrentHashMap<>();
-    ForkJoinPool pool = new ForkJoinPool(parallelism);
-    this.currentPool = pool;
+    boolean ownsPool = (injectedPool == null);
+    ForkJoinPool pool = ownsPool ? new ForkJoinPool(parallelism) : injectedPool;
+    if (ownsPool) {
+      this.currentPool = pool;
+    }
     try {
       HashCalculationTask task = new HashCalculationTask(candidatesForHashing, 0, candidatesForHashing.size());
       pool.submit(task).join();
     } finally {
-      shutdownPool(pool);
-      this.currentPool = null;
+      if (ownsPool) {
+        shutdownPool(pool);
+        this.currentPool = null;
+      }
     }
 
     // 結果を収集

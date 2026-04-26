@@ -1,5 +1,8 @@
 package com.example.diskanalyzer.model;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.time.LocalDateTime;
@@ -17,7 +20,13 @@ public class FileNode {
   private final String extension;
   private String hash; // 重複検出用のハッシュ値
 
-  public FileNode(Path path, long size, FileTime modified, boolean isDirectory, boolean isHidden) {
+  @JsonCreator
+  public FileNode(
+      @JsonProperty("path") Path path,
+      @JsonProperty("size") long size,
+      @JsonProperty("modified") FileTime modified,
+      @JsonProperty("directory") boolean isDirectory,
+      @JsonProperty("hidden") boolean isHidden) {
     this.path = path;
     this.size = size;
     this.modified = modified;

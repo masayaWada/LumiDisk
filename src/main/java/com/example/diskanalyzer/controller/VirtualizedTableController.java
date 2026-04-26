@@ -6,11 +6,13 @@ import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.concurrent.Task;
 import javafx.scene.control.TableView;
-import javafx.scene.control.TableColumn;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -27,6 +29,14 @@ public class VirtualizedTableController {
   private final ObservableList<FileNode> displayedItems;
   private final List<FileNode> allItems;
 
+  /**
+   * ページロード / プリフェッチ用の単一スレッドエグゼキュータ。
+   * 同時実行は 1 件のみ。新規リクエスト到来時は前タスクを {@link Future#cancel} で中断する。
+   */
+  private final ExecutorService loadExecutor;
+  private volatile Future<?> currentLoadTask;
+  private volatile Future<?> currentPrefetchTask;
+
   private int currentPage = 0;
   private int totalPages = 0;
   private boolean isLoading = false;
@@ -37,9 +47,28 @@ public class VirtualizedTableController {
     this.allItems = allItems;
     this.displayedItems = FXCollections.observableArrayList();
     this.table.setItems(displayedItems);
+    this.loadExecutor = Executors.newSingleThreadExecutor(r -> {
+      Thread t = new Thread(r, "VirtualizedTableController-loader");
+      t.setDaemon(true);
+      return t;
+    });
 
     calculateTotalPages();
     loadInitialPage();
+  }
+
+  /**
+   * 内部の Executor を確実に解放する。アプリケーション終了時等で呼ぶ想定。
+   * 二重呼び出ししても安全。
+   */
+  public void shutdown() {
+    if (currentLoadTask != null) {
+      currentLoadTask.cancel(true);
+    }
+    if (currentPrefetchTask != null) {
+      currentPrefetchTask.cancel(true);
+    }
+    loadExecutor.shutdownNow();
   }
 
   /**
@@ -53,8 +82,13 @@ public class VirtualizedTableController {
    * 指定ページを読み込む
    */
   public void loadPage(int page) {
-    if (isLoading || page < 0 || page >= totalPages) {
+    if (page < 0 || page >= totalPages) {
       return;
+    }
+
+    // 進行中のロードがあれば中断
+    if (currentLoadTask != null && !currentLoadTask.isDone()) {
+      currentLoadTask.cancel(true);
     }
 
     isLoading = true;
@@ -62,13 +96,16 @@ public class VirtualizedTableController {
 
     Task<Void> loadTask = new Task<Void>() {
       @Override
-      protected Void call() throws Exception {
+      protected Void call() {
         int startIndex = page * PAGE_SIZE;
         int endIndex = Math.min(startIndex + PAGE_SIZE, allItems.size());
 
         List<FileNode> pageItems = allItems.subList(startIndex, endIndex);
 
         Platform.runLater(() -> {
+          if (isCancelled()) {
+            return;
+          }
           displayedItems.clear();
           displayedItems.addAll(pageItems);
           isLoading = false;
@@ -83,9 +120,7 @@ public class VirtualizedTableController {
       }
     };
 
-    Thread loadThread = new Thread(loadTask);
-    loadThread.setDaemon(true);
-    loadThread.start();
+    currentLoadTask = loadExecutor.submit(loadTask);
   }
 
   /**
@@ -145,9 +180,14 @@ public class VirtualizedTableController {
       return;
     }
 
+    // 既存のプリフェッチ処理があれば中断
+    if (currentPrefetchTask != null && !currentPrefetchTask.isDone()) {
+      currentPrefetchTask.cancel(true);
+    }
+
     Task<Void> prefetchTask = new Task<Void>() {
       @Override
-      protected Void call() throws Exception {
+      protected Void call() {
         int currentLoadId = loadCounter.incrementAndGet();
 
         // 現在のページの前後をプリフェッチ
@@ -155,18 +195,16 @@ public class VirtualizedTableController {
         int endPage = Math.min(totalPages - 1, currentPage + 1);
 
         for (int page = startPage; page <= endPage; page++) {
-          if (loadCounter.get() != currentLoadId) {
-            // 新しいリクエストが来た場合は中断
+          if (isCancelled() || loadCounter.get() != currentLoadId) {
+            // 新しいリクエストが来た / cancel された場合は中断
             break;
           }
 
           int startIndex = page * PAGE_SIZE;
           int endIndex = Math.min(startIndex + PREFETCH_SIZE, allItems.size());
 
-          // データをプリフェッチ（実際の処理はここでは行わない）
           List<FileNode> prefetchItems = allItems.subList(startIndex, endIndex);
 
-          // プリフェッチ完了をログ出力
           logger.debug("ページ {} のプリフェッチ完了: {} 件", page, prefetchItems.size());
         }
 
@@ -174,9 +212,7 @@ public class VirtualizedTableController {
       }
     };
 
-    Thread prefetchThread = new Thread(prefetchTask);
-    prefetchThread.setDaemon(true);
-    prefetchThread.start();
+    currentPrefetchTask = loadExecutor.submit(prefetchTask);
   }
 
   /**
