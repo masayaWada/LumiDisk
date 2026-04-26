@@ -36,6 +36,12 @@ LumiDisk は JavaFX 製の Windows / macOS 向けディスク使用量分析ツ�
 - 公開 `shutdown()` は冪等 (現在 pool が無ければ no-op、shutdown 済みなら再 shutdown しない)。Controller の `setOnSucceeded` / `setOnFailed` 両方から呼ばれる前提。
 - Process I/O ストリーム (`getInputStream` / `getErrorStream` / `getOutputStream`) は `waitFor()` 後の finally で必ず close (`FileManagerService.closeProcessStreams` 参照)。
 
+### 永続化レイヤの規約 (Phase 3 で確立)
+- スナップショット JSON は Jackson + `JavaTimeModule` + 専用 `FileTime` Module で読み書きする (`ScanCacheService.fileTimeModule()`)。`FileTime` は Jackson 既定では serialize 不能。
+- 永続化対象モデル (`FileNode` / `ScanSnapshot`) はコンストラクタに `@JsonCreator` + 各引数に `@JsonProperty` を付ける。final フィールドのため deserialize できない silent バグを防ぐ。
+- `FAIL_ON_UNKNOWN_PROPERTIES` は無効。derived getter (例: `FileNode.getExtension()`) が JSON に出ても deserialize で落ちないようにする。
+- モデルにフィールド追加するときは: (1) コンストラクタの `@JsonProperty` を更新、(2) 既存スナップショット JSON との互換 (古い JSON に新フィールドが無い場合のデフォルト値) を意識する。
+
 ### 増分スキャンとキャッシュ
 - `IncrementalScanService.incrementalScan(Path)` は前回の `ScanSnapshot` を `ScanCacheService` から取得し、サイズと `lastModifiedTime` の差分のあるパスだけ再スキャンする。
 - スナップショットは `~/.lumidisk/cache/<pathHash>_<timestamp>.snapshot.json` に Jackson + JavaTimeModule で保存。最大 10 件、超過分は古いものから削除。
@@ -84,16 +90,18 @@ refs #<issue>
 
 - Logback 設定は `src/main/resources/logback.xml`。
 - 出力先（実運用）: Windows `%LOCALAPPDATA%/LumiDisk/logs/`、macOS `~/Library/Logs/LumiDisk/`。ローテーション 10MB × 5。
+- 出力先は `MainApp` の `static {}` ブロックで `LUMIDISK_LOG_DIR` system property を設定し、`logback.xml` から `${LUMIDISK_LOG_DIR:-logs}` で参照する仕組み。**`Logger` フィールドより先に static ブロックを置く順序依存**があるので、`MainApp` を編集するときは初期化順序を崩さないこと。
 
 ## 既知の制約・注意点
 
 - シンボリックリンク・ショートカットの追跡は行わない。
 - Windows の代替データストリーム (ADS) はサイズ集計対象外。
 - macOS は Full Disk Access が無いと一部ディレクトリをスキップする。
-- `src/test/` は現状未作成（README/ドキュメントは将来の JUnit 構成を前提に書かれている）。テストを足すときは `./gradlew test` がそのまま動く。
+- テスト基盤は `src/test/java/com/example/diskanalyzer/service/` に JUnit 5 + `@TempDir` 構成で整備済み (現在 13 ケース)。新規テストを足すときは同パッケージに同じスタイルで追加する。
+- **Gradle 9 必須依存**: `build.gradle.kts` で `testRuntimeOnly("org.junit.platform:junit-platform-launcher")` を宣言済み。これが無いと `gradle test` が "Failed to load JUnit Platform" で失敗する。
 - 配布バイナリは無署名。Gatekeeper / SmartScreen 警告が出る前提でユーザ向け説明を更新すること。
 - 配布パッケージング（exe/app）は未構成。`./gradlew jpackage` タスクは存在しない。配布が必要なら `org.beryx.runtime` 等の追加が必要。
-- `build.gradle.kts` に `org.xerial:sqlite-jdbc` が宣言されているが現状未使用（永続化はキャッシュ用 JSON のみ）。SQLite を前提にしないこと。
+- 永続化はキャッシュ用 JSON のみで運用 (Phase 4 で `org.xerial:sqlite-jdbc` を依存から外した)。SQLite を前提にしないこと。
 - `docs/改善計画.md` 等のドキュメントに記載されたファイルパスは、コードベース実体とずれていることがある (例: `scanner/FileScanner.java` 表記の実体は `service/FileScanner.java`)。引用前に `find`/`grep` で確認すること。
 
 ## 詳細ドキュメント
