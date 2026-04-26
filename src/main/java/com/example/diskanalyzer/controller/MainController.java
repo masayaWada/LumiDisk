@@ -232,7 +232,7 @@ public class MainController implements Initializable {
       scanButton.setDisable(false);
       progressBar.setVisible(false);
       statusLabel.textProperty().unbind();
-      statusLabel.setText("スキャン失敗: " + event.getSource().getException().getMessage());
+      statusLabel.setText("スキャンに失敗しました (詳細はログを参照)");
     });
   }
 
@@ -321,7 +321,7 @@ public class MainController implements Initializable {
       } catch (Exception e) {
         logger.error("CSVエクスポートエラー", e);
         statusLabel.textProperty().unbind();
-        statusLabel.setText("CSVエクスポートエラー: " + e.getMessage());
+        statusLabel.setText("CSVエクスポートに失敗しました (詳細はログを参照)");
       }
     }
   }
@@ -348,7 +348,7 @@ public class MainController implements Initializable {
       } catch (Exception e) {
         logger.error("JSONエクスポートエラー", e);
         statusLabel.textProperty().unbind();
-        statusLabel.setText("JSONエクスポートエラー: " + e.getMessage());
+        statusLabel.setText("JSONエクスポートに失敗しました (詳細はログを参照)");
       }
     }
   }
@@ -446,7 +446,7 @@ public class MainController implements Initializable {
       Alert errorDialog = new Alert(Alert.AlertType.ERROR);
       errorDialog.setTitle("表示エラー");
       errorDialog.setHeaderText("予期しないエラーが発生しました");
-      errorDialog.setContentText("エラー: " + e.getMessage());
+      errorDialog.setContentText("ファイルマネージャー表示中にエラーが発生しました。詳細はログをご確認ください。");
       errorDialog.showAndWait();
     }
   }
@@ -526,7 +526,7 @@ public class MainController implements Initializable {
       Alert errorDialog = new Alert(Alert.AlertType.ERROR);
       errorDialog.setTitle("削除エラー");
       errorDialog.setHeaderText("予期しないエラーが発生しました");
-      errorDialog.setContentText("エラー: " + e.getMessage());
+      errorDialog.setContentText("ファイル削除中にエラーが発生しました。詳細はログをご確認ください。");
       errorDialog.showAndWait();
     }
   }
@@ -569,7 +569,7 @@ public class MainController implements Initializable {
       duplicateService.shutdown();
       Platform.runLater(() -> {
         findDuplicatesButton.setDisable(false);
-        statusLabel.setText("重複ファイル検出エラー: " + duplicateTask.getException().getMessage());
+        statusLabel.setText("重複ファイル検出に失敗しました (詳細はログを参照)");
         logger.error("重複ファイル検出エラー", duplicateTask.getException());
       });
     });
@@ -621,7 +621,7 @@ public class MainController implements Initializable {
       incrementalService.shutdown();
       Platform.runLater(() -> {
         incrementalScanButton.setDisable(false);
-        statusLabel.setText("増分スキャンエラー: " + incrementalTask.getException().getMessage());
+        statusLabel.setText("増分スキャンに失敗しました (詳細はログを参照)");
         logger.error("増分スキャンエラー", incrementalTask.getException());
       });
     });
@@ -666,7 +666,7 @@ public class MainController implements Initializable {
     treeMapTask.setOnFailed(e -> {
       Platform.runLater(() -> {
         treeMapButton.setDisable(false);
-        statusLabel.setText("ツリーマップ作成エラー: " + treeMapTask.getException().getMessage());
+        statusLabel.setText("ツリーマップ作成に失敗しました (詳細はログを参照)");
         logger.error("ツリーマップ作成エラー", treeMapTask.getException());
       });
     });
@@ -711,7 +711,7 @@ public class MainController implements Initializable {
     statsTask.setOnFailed(e -> {
       Platform.runLater(() -> {
         extensionStatsButton.setDisable(false);
-        statusLabel.setText("拡張子統計作成エラー: " + statsTask.getException().getMessage());
+        statusLabel.setText("拡張子統計作成に失敗しました (詳細はログを参照)");
         logger.error("拡張子統計作成エラー", statsTask.getException());
       });
     });

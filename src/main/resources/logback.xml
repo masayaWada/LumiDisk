@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
+  <!-- LUMIDISK_LOG_DIR は MainApp.configureLogDirectory() で OS 別に設定される。
+       未設定の場合 (CLI 経由のテスト等) は ./logs にフォールバック。 -->
+  <property name="LOG_DIR" value="${LUMIDISK_LOG_DIR:-logs}" />
+
   <!-- コンソール出力 -->
   <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
     <encoder>
@@ -9,9 +13,9 @@
 
   <!-- ファイル出力 -->
   <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-    <file>logs/lumidisk.log</file>
+    <file>${LOG_DIR}/lumidisk.log</file>
     <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-      <fileNamePattern>logs/lumidisk.%d{yyyy-MM-dd}.log</fileNamePattern>
+      <fileNamePattern>${LOG_DIR}/lumidisk.%d{yyyy-MM-dd}.log</fileNamePattern>
       <maxHistory>7</maxHistory>
       <totalSizeCap>50MB</totalSizeCap>
     </rollingPolicy>

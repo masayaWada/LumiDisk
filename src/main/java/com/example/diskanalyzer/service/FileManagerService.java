@@ -59,16 +59,16 @@ public class FileManagerService {
    */
   private boolean showInFinder(Path path) {
     try {
-      String command;
+      ProcessBuilder pb;
       if (Files.isDirectory(path)) {
         // ディレクトリの場合はそのディレクトリを開く
-        command = "open " + path.toString();
+        pb = new ProcessBuilder("open", path.toString());
       } else {
         // ファイルの場合は親ディレクトリを開いてファイルを選択
-        command = "open -R " + path.toString();
+        pb = new ProcessBuilder("open", "-R", path.toString());
       }
 
-      Process process = Runtime.getRuntime().exec(command);
+      Process process = pb.start();
       int exitCode;
       try {
         exitCode = process.waitFor();
@@ -80,7 +80,7 @@ public class FileManagerService {
         logger.info("Finderで表示しました: {}", path);
         return true;
       } else {
-        logger.error("Finder表示コマンドが失敗しました: {}", command);
+        logger.error("Finder表示コマンドが失敗しました: {} (exitCode={})", path, exitCode);
         return false;
       }
     } catch (Exception e) {
@@ -97,16 +97,17 @@ public class FileManagerService {
    */
   private boolean showInExplorer(Path path) {
     try {
-      String command;
+      ProcessBuilder pb;
       if (Files.isDirectory(path)) {
         // ディレクトリの場合はそのディレクトリを開く
-        command = "explorer \"" + path.toString() + "\"";
+        pb = new ProcessBuilder("explorer", path.toString());
       } else {
         // ファイルの場合は親ディレクトリを開いてファイルを選択
-        command = "explorer /select,\"" + path.toString() + "\"";
+        // explorer は /select,<path> を 1 引数として受け取る (カンマ区切り、空白なし)
+        pb = new ProcessBuilder("explorer", "/select," + path.toString());
       }
 
-      Process process = Runtime.getRuntime().exec(command);
+      Process process = pb.start();
       int exitCode;
       try {
         exitCode = process.waitFor();
@@ -114,13 +115,9 @@ public class FileManagerService {
         closeProcessStreams(process);
       }
 
-      if (exitCode == 0) {
-        logger.info("エクスプローラーで表示しました: {}", path);
-        return true;
-      } else {
-        logger.error("エクスプローラー表示コマンドが失敗しました: {}", command);
-        return false;
-      }
+      // explorer は成功時でも 1 を返す既知挙動があるため exitCode で失敗判定はしない
+      logger.info("エクスプローラーで表示しました: {} (exitCode={})", path, exitCode);
+      return true;
     } catch (Exception e) {
       logger.error("エクスプローラー表示に失敗しました: {}", path, e);
       return false;
@@ -146,15 +143,12 @@ public class FileManagerService {
 
       for (String fileManager : fileManagers) {
         if (isCommandAvailable(fileManager)) {
-          String command;
-          if (Files.isDirectory(path)) {
-            command = fileManager + " \"" + path.toString() + "\"";
-          } else {
-            // ファイルの場合は親ディレクトリを開く
-            command = fileManager + " \"" + path.getParent().toString() + "\"";
+          Path target = Files.isDirectory(path) ? path : path.getParent();
+          if (target == null) {
+            continue;
           }
-
-          Process process = Runtime.getRuntime().exec(command);
+          ProcessBuilder pb = new ProcessBuilder(fileManager, target.toString());
+          Process process = pb.start();
           int exitCode;
           try {
             exitCode = process.waitFor();
@@ -215,7 +209,7 @@ public class FileManagerService {
    */
   private boolean isCommandAvailable(String command) {
     try {
-      Process process = Runtime.getRuntime().exec("which " + command);
+      Process process = new ProcessBuilder("which", command).start();
       int exitCode;
       try {
         exitCode = process.waitFor();
