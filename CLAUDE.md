@@ -101,7 +101,9 @@ refs #<issue>
 - テスト基盤は `src/test/java/com/example/diskanalyzer/service/` に JUnit 5 + `@TempDir` 構成で整備済み (現在 13 ケース)。新規テストを足すときは同パッケージに同じスタイルで追加する。
 - **Gradle 9 必須依存**: `build.gradle.kts` で `testRuntimeOnly("org.junit.platform:junit-platform-launcher")` を宣言済み。これが無いと `gradle test` が "Failed to load JUnit Platform" で失敗する。
 - 配布バイナリは無署名。Gatekeeper / SmartScreen 警告が出る前提でユーザ向け説明を更新すること。
-- 配布パッケージング（exe/app）は未構成。`./gradlew jpackage` タスクは存在しない。配布が必要なら `org.beryx.runtime` 等の追加が必要。
+- 配布パッケージングは `./gradlew jpackage` で実行可能 (`build.gradle.kts` に手書き Exec タスクとして定義済み)。出力先 `build/jpackage/`、OS 別に dmg/exe/deb を生成。`jpackage` はクロスコンパイル不可なので、exe は Windows、dmg は macOS でそれぞれビルドする必要があり、両方を一度に作るには `.github/workflows/release.yml` のマトリクス CI を使う。
+- 非モジュラ JavaFX で jpackage する都合上、エントリポイントには `Launcher` クラス (Application を継承しない wrapper) を使う。`MainApp` を直接 `--main-class` に渡すと "JavaFX runtime components are missing" で起動しない。`./gradlew run` 用には引き続き `application.mainClass` が `MainApp` を指している (openjfx プラグインが module-path を組むため変更不要)。
+- `org.beryx.runtime` プラグインは Gradle 9.0 と非互換 (`Project.exec()` 削除の影響で `:jre` タスクが落ちる) のため採用していない。Gradle 8 系に戻る場合のみ再検討する。
 - 永続化はキャッシュ用 JSON のみで運用 (Phase 4 で `org.xerial:sqlite-jdbc` を依存から外した)。SQLite を前提にしないこと。
 - `docs/改善計画.md` 等のドキュメントに記載されたファイルパスは、コードベース実体とずれていることがある (例: `scanner/FileScanner.java` 表記の実体は `service/FileScanner.java`)。引用前に `find`/`grep` で確認すること。
 

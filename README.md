@@ -1,5 +1,7 @@
 # LumiDisk
 
+**Version 1.0.0**
+
 **LumiDisk** は Windows / macOS 向けのディスク使用量分析ツールです。\
 **マルチスレッドによる高速かつ正確なスキャン**と**増分キャッシュ**を備え、ストレージ使用量を**直感的な円グラフ**で可視化します。
 
@@ -209,17 +211,30 @@ gradle build
 ./gradlew test --tests <FQCN>   # 単一テストクラス
 ```
 
-### パッケージング（exe/app 作成）
+### パッケージング（exe / dmg 作成）
+
+`org.beryx.runtime` プラグインで `jlink` カスタム JRE を作り、`jpackage`
+で OS ネイティブインストーラを生成します。
 
 ``` bash
 ./gradlew jpackage
 ```
 
-> 注: 現状 `jpackage` タスクは `build.gradle.kts` で定義されていません。
-> 配布パッケージングは未構成のため、追加には `org.beryx.runtime` プラグイン等の
-> 導入が必要です（[`docs/開発ガイド.md`](./docs/開発ガイド.md) 参照）。
+成果物は `build/jpackage/` に出力されます。
 
-出力先は `build/jpackage/` 配下になる予定です。
+| OS | 成果物 | 生成例 |
+| --- | --- | --- |
+| macOS | `.dmg` | `build/jpackage/LumiDisk-1.0.0.dmg` |
+| Windows | `.exe` | `build/jpackage/LumiDisk-1.0.0.exe` |
+| Linux | `.deb` | `build/jpackage/lumidisk_1.0.0_amd64.deb` |
+
+> **クロスコンパイル不可**: `jpackage` は実行ホストの OS 用パッケージしか作れません。
+> macOS の `.dmg` は macOS で、Windows の `.exe` は Windows でそれぞれビルドする必要があります。
+> 両方を一度に作るには `.github/workflows/release.yml`
+> （`v*` タグ push or 手動実行で macOS / Windows マトリクスビルド → GitHub Releases へ添付）を利用してください。
+
+> **署名・公証**: 本リリースの配布バイナリは無署名です。macOS は Gatekeeper、
+> Windows は SmartScreen の警告が初回起動時に出る前提で配布してください。
 
 ### build.gradle.kts（主要設定）
 
@@ -227,12 +242,18 @@ gradle build
 plugins {
     id("application")
     id("org.openjfx.javafxplugin") version "0.1.0"
+    id("org.beryx.runtime") version "1.13.1"
 }
 
+group = "com.example.diskanalyzer"
+version = "1.0.0"
+
 dependencies {
-    implementation("org.xerial:sqlite-jdbc:3.46.0.0")
     implementation("ch.qos.logback:logback-classic:1.5.6")
+    implementation("com.fasterxml.jackson.core:jackson-databind:2.16.1")
+    implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.16.1")
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 javafx {
