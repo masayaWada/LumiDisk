@@ -121,7 +121,8 @@ public class ScanCacheService {
       Path filePath = cacheDirectory.resolve(fileName);
 
       objectMapper.writeValue(filePath.toFile(), snapshot);
-      logger.info("スナップショットを保存しました: {}", filePath);
+      // フルパスは個人情報を含み得るため debug レベルに留める (Phase 4)
+      logger.debug("スナップショットを保存しました: {}", filePath);
 
       // 古いキャッシュを削除
       cleanupOldCache();
@@ -189,7 +190,7 @@ public class ScanCacheService {
 
       if (Files.exists(filePath)) {
         Files.delete(filePath);
-        logger.info("スナップショットを削除しました: {}", filePath);
+        logger.debug("スナップショットを削除しました: {}", filePath);
         return true;
       }
     } catch (IOException e) {
@@ -212,7 +213,7 @@ public class ScanCacheService {
             .forEach(path -> {
               try {
                 Files.delete(path);
-                logger.info("スナップショットを削除しました: {}", path);
+                logger.debug("スナップショットを削除しました: {}", path);
               } catch (IOException e) {
                 logger.warn("スナップショットの削除に失敗: {}", path, e);
               }
@@ -312,7 +313,7 @@ public class ScanCacheService {
         for (int i = 0; i < deleteCount; i++) {
           try {
             Files.delete(cacheFiles.get(i));
-            logger.info("古いキャッシュを削除しました: {}", cacheFiles.get(i));
+            logger.debug("古いキャッシュを削除しました: {}", cacheFiles.get(i));
           } catch (IOException e) {
             logger.warn("古いキャッシュの削除に失敗: {}", cacheFiles.get(i), e);
           }

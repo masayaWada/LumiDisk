@@ -8,7 +8,8 @@ repositories {
 }
 
 dependencies {
-    implementation("org.xerial:sqlite-jdbc:3.46.0.0")
+    // 永続化はキャッシュ用 JSON のみで運用しており SQLite は未使用のため
+    // sqlite-jdbc は依存から外した (将来必要になったら再導入)。
     implementation("ch.qos.logback:logback-classic:1.5.6")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.16.1")
     implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.16.1")

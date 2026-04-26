@@ -31,7 +31,8 @@ public class VirtualizedTableController {
 
   /**
    * ページロード / プリフェッチ用の単一スレッドエグゼキュータ。
-   * 同時実行は 1 件のみ。新規リクエスト到来時は前タスクを {@link Future#cancel} で中断する。
+   * 同時実行は 1 件のみ。新規リクエスト到来時は前タスクを
+   * {@link Future#cancel} で中断する。
    */
   private final ExecutorService loadExecutor;
   private volatile Future<?> currentLoadTask;
@@ -40,8 +41,19 @@ public class VirtualizedTableController {
   private int currentPage = 0;
   private int totalPages = 0;
   private boolean isLoading = false;
-  private AtomicInteger loadCounter = new AtomicInteger(0);
+  /**
+   * プリフェッチ要求の世代カウンタ。新規プリフェッチ開始時にインクリメントし、
+   * 進行中タスクは自分の世代と一致しなくなった時点で中断する。
+   */
+  private final AtomicInteger currentLoadRequestId = new AtomicInteger(0);
 
+  /**
+   * 指定された {@link TableView} とアイテムリストを束ねて、ページング表示用のコントローラを構築する。
+   * 構築直後に最初のページを非同期でロードする。
+   *
+   * @param table    表示対象のテーブル (内部で {@link TableView#setItems} される)
+   * @param allItems 全件分のデータ (フィルタ/ソート時には書き換えられる)
+   */
   public VirtualizedTableController(TableView<FileNode> table, List<FileNode> allItems) {
     this.table = table;
     this.allItems = allItems;
@@ -79,7 +91,11 @@ public class VirtualizedTableController {
   }
 
   /**
-   * 指定ページを読み込む
+   * 指定ページを読み込んで {@link TableView} に反映する。
+   * 進行中のロードがあれば {@link Future#cancel(boolean) cancel(true)} で中断してから新規にスケジュールする。
+   * 範囲外のページ番号は無視される。
+   *
+   * @param page 0 始まりのページ番号
    */
   public void loadPage(int page) {
     if (page < 0 || page >= totalPages) {
@@ -188,14 +204,14 @@ public class VirtualizedTableController {
     Task<Void> prefetchTask = new Task<Void>() {
       @Override
       protected Void call() {
-        int currentLoadId = loadCounter.incrementAndGet();
+        int currentLoadId = currentLoadRequestId.incrementAndGet();
 
         // 現在のページの前後をプリフェッチ
         int startPage = Math.max(0, currentPage - 1);
         int endPage = Math.min(totalPages - 1, currentPage + 1);
 
         for (int page = startPage; page <= endPage; page++) {
-          if (isCancelled() || loadCounter.get() != currentLoadId) {
+          if (isCancelled() || currentLoadRequestId.get() != currentLoadId) {
             // 新しいリクエストが来た / cancel された場合は中断
             break;
           }

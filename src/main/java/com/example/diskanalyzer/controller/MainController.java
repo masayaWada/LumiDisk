@@ -297,7 +297,9 @@ public class MainController implements Initializable {
     pieChart.setData(pieChartData);
 
     // タイトルを動的に更新
-    String title = displayCount > 0 ? String.format("ファイル・ディレクトリサイズ分布 (上位%d件)", displayCount) : "ファイル・ディレクトリサイズ分布 (全件)";
+    String title = displayCount > 0
+        ? String.format("ファイル・ディレクトリサイズ分布 (上位%d件)", displayCount)
+        : "ファイル・ディレクトリサイズ分布 (全件)";
     pieChart.setTitle(title);
   }
 
@@ -438,7 +440,8 @@ public class MainController implements Initializable {
         Alert errorDialog = new Alert(Alert.AlertType.ERROR);
         errorDialog.setTitle("表示エラー");
         errorDialog.setHeaderText("ファイルマネージャーでの表示に失敗しました");
-        errorDialog.setContentText("ファイルマネージャーが利用できないか、ファイルにアクセスできません。");
+        errorDialog.setContentText(
+            "ファイルマネージャーが利用できないか、ファイルにアクセスできません。");
         errorDialog.showAndWait();
       }
     } catch (Exception e) {
@@ -448,7 +451,8 @@ public class MainController implements Initializable {
       Alert errorDialog = new Alert(Alert.AlertType.ERROR);
       errorDialog.setTitle("表示エラー");
       errorDialog.setHeaderText("予期しないエラーが発生しました");
-      errorDialog.setContentText("ファイルマネージャー表示中にエラーが発生しました。詳細はログをご確認ください。");
+      errorDialog.setContentText(
+          "ファイルマネージャー表示中にエラーが発生しました。詳細はログをご確認ください。");
       errorDialog.showAndWait();
     }
   }
@@ -518,7 +522,8 @@ public class MainController implements Initializable {
         Alert errorDialog = new Alert(Alert.AlertType.ERROR);
         errorDialog.setTitle("削除エラー");
         errorDialog.setHeaderText("ファイルの削除に失敗しました");
-        errorDialog.setContentText("ファイルが使用中か、権限が不足している可能性があります。");
+        errorDialog.setContentText(
+            "ファイルが使用中か、権限が不足している可能性があります。");
         errorDialog.showAndWait();
       }
     } catch (Exception e) {
@@ -528,7 +533,8 @@ public class MainController implements Initializable {
       Alert errorDialog = new Alert(Alert.AlertType.ERROR);
       errorDialog.setTitle("削除エラー");
       errorDialog.setHeaderText("予期しないエラーが発生しました");
-      errorDialog.setContentText("ファイル削除中にエラーが発生しました。詳細はログをご確認ください。");
+      errorDialog.setContentText(
+          "ファイル削除中にエラーが発生しました。詳細はログをご確認ください。");
       errorDialog.showAndWait();
     }
   }
@@ -679,13 +685,14 @@ public class MainController implements Initializable {
     statusLabel.setText("拡張子統計を作成中...");
     extensionStatsButton.setDisable(true);
 
-    Task<Map<String, VisualizationService.ExtensionStats>> statsTask = new Task<Map<String, VisualizationService.ExtensionStats>>() {
-      @Override
-      protected Map<String, VisualizationService.ExtensionStats> call() throws Exception {
-        updateMessage("拡張子統計を作成中...");
-        return visualizationService.createExtensionStats(currentScanResult);
-      }
-    };
+    Task<Map<String, VisualizationService.ExtensionStats>> statsTask =
+        new Task<Map<String, VisualizationService.ExtensionStats>>() {
+          @Override
+          protected Map<String, VisualizationService.ExtensionStats> call() throws Exception {
+            updateMessage("拡張子統計を作成中...");
+            return visualizationService.createExtensionStats(currentScanResult);
+          }
+        };
 
     statsTask.setOnSucceeded(e -> {
       Map<String, VisualizationService.ExtensionStats> stats = statsTask.getValue();

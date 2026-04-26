@@ -66,13 +66,16 @@ public class DuplicateDetectionService {
       }
     }
 
-    // サイズが2つ以上のファイルのみを対象にハッシュ計算
+    // サイズが2つ以上のファイルのみを対象にハッシュ計算。
+    // 小さいファイルから先に処理することで、巨大ファイルの I/O 待ちで全体が
+    // ブロックされにくくなる (短い候補が先に終わり結果が早く揃う)。
     List<FileNode> candidatesForHashing = new ArrayList<>();
     for (List<FileNode> group : sizeGroups.values()) {
       if (group.size() > 1) {
         candidatesForHashing.addAll(group);
       }
     }
+    candidatesForHashing.sort(Comparator.comparingLong(FileNode::getSize));
 
     logger.info("ハッシュ計算対象: {} ファイル", candidatesForHashing.size());
 

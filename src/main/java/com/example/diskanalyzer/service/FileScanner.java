@@ -57,7 +57,8 @@ public class FileScanner {
    * 指定されたパス配下をスキャンして結果を返す
    */
   public ScanResult scan(Path root) throws IOException {
-    logger.info("スキャン開始: {}", root);
+    // フルパスは個人情報を含み得るため debug レベルに留める (Phase 4)
+    logger.debug("スキャン開始: {}", root);
     long startTime = System.currentTimeMillis();
 
     ConcurrentLinkedQueue<FileNode> results = new ConcurrentLinkedQueue<>();
